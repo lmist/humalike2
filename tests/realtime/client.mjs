@@ -11,6 +11,30 @@ export function unique(prefix) {
   return `${prefix}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
+// A connect timeout means the TCP connection was never established, so the
+// request was never sent and retrying cannot double-bill or double-ingest.
+// Anything else (reset mid-flight, HTTP errors) is surfaced unchanged.
+export function isConnectTimeout(error) {
+  let cause = error;
+  for (let depth = 0; cause && depth < 4; depth += 1) {
+    if (cause.code === "UND_ERR_CONNECT_TIMEOUT") return true;
+    cause = cause.cause;
+  }
+  return false;
+}
+
+export async function fetchWithConnectRetry(url, init, attempts = 3) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      if (!isConnectTimeout(error) || attempt >= attempts) throw error;
+      console.error(`RETRY connect timeout on ${new URL(url).pathname} (attempt ${attempt}/${attempts})`);
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+}
+
 export async function post(path, body = {}, options = {}) {
   const headers = {"content-type": "application/json", ...(options.headers || {})};
   if (options.auth !== false) headers.authorization = `Bearer ${API_KEY}`;
@@ -19,7 +43,7 @@ export async function post(path, body = {}, options = {}) {
     else headers.authorization = options.authorization;
   }
   const startedAt = new Date();
-  const response = await fetch(`${BASE_URL}${path}`, {
+  const response = await fetchWithConnectRetry(`${BASE_URL}${path}`, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
