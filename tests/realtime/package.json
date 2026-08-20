@@ -1,0 +1,11 @@
+{
+  "name": "humalike-live-realtime-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "./run.sh"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
+  }
+}
