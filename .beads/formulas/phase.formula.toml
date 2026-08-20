@@ -20,15 +20,16 @@ labels = ["phase"]
 description = """
 Read spec/07 'Phase {{number}}' and every spec/ section it links (use the OpenKnowledge exec tool, not native reads).
 Enumerate the MUST/SHOULD invariants and endpoints the phase covers and the live-suite assertions that prove them.
-For each unit of work pour `endpoint` or `feature` (or `bug`/`chore`) and make its root depend on this phase's
-`build` step: bd dep add <child-root> <build-id>. Do not write implementation here.
+For each unit of work pour `endpoint` or `feature` (or `bug`/`chore`) and attach its root to this phase's
+`build` step by making the build depend on the child: bd dep add <build-id> <child-root>.
+For phases 1-8, also gate the child on the previous phase's build: bd dep add <child-root> <previous-build-id>. Do not write implementation here.
 Acceptance: the build step's blockers list covers every invariant in the phase text; nothing is tracked outside beads.
 """
 
 [[steps]]
 id = "build"
 title = "Build phase {{number}}: {{name}}"
-type = "epic"
+type = "task"
 priority = 1
 labels = ["phase"]
 needs = ["scope"]
