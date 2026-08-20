@@ -61,7 +61,7 @@ Each `record_event` type (`typing_start`, `typing_stop`, `message_edited`) retur
 
 Normal `respond` returned `{scheduled:[...],superseded:false}`. Entries contained exactly `id,created_at,updated_at,thread_id,content,position,deliver_at,status`; positions began at zero and times increased. Production materially rewrote the draft and, in the final run, substituted an unrelated four-digit verification code, so scheduled content is generated output rather than a faithful split. [Live runner](../tests/realtime/run.mjs)
 
-With reading delay 500 ms, 120 WPM, and max typing 1500 ms, first delivery was creation plus reading delay plus `min(word_count / 120 * 60000,1500)`. Later bubbles added a fixed 200 ms inter-bubble gap plus capped typing time. The observed spacing was 1700 ms; `max_typing_ms` excludes the gap. [Live runner](../tests/realtime/run.mjs)
+With reading delay 500 ms, 120 WPM, and max typing 1500 ms, first delivery was creation plus reading delay plus `min(word_count / 120 * 60000,1500)`. Later bubbles added a fixed 200 ms inter-bubble gap plus capped typing time. Observed serialized timestamp arithmetic can drift by 1 ms (`1999` ms versus an expected `2000` ms), so the live assertion allows a tight ±10 ms tolerance around the formula. The representative inter-bubble spacing remains approximately 1700 ms; `max_typing_ms` excludes the gap. [Live runner](../tests/realtime/run.mjs)
 
 After a newer batch advanced the epoch, the stale response was exactly HTTP 200 `{scheduled:[],superseded:true}`. Component-scoped usage snapshots showed no `turn-taking` or `theoryofmind` charge; one concurrent `social-memory` call appeared account-wide. [Live runner](../tests/realtime/run.mjs)
 

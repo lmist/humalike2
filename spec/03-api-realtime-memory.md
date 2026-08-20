@@ -100,7 +100,7 @@ type RespondResponse={scheduled:ScheduledMessage[];superseded:boolean};
 
 A current epoch returns 1–5 zero-based scheduled entries with strictly increasing delivery times and may materially rewrite the draft. A stale epoch returns HTTP 200 exactly `{scheduled:[],superseded:true}` without relevant billing. [Realtime evidence](../research/tested-realtime-memory.md)
 
-For bubble `i`, let `typing_i=min(words_i/typing_wpm*60000,max_typing_ms)`. First delivery is `created_at + reading_delay_ms + typing_0`. Every later delivery follows the prior delivery by `200 + typing_i` milliseconds. `max_typing_ms` caps typing only; it excludes the fixed 200 ms inter-bubble gap. [Realtime evidence](../research/tested-realtime-memory.md)
+For bubble `i`, let `typing_i=min(words_i/typing_wpm*60000,max_typing_ms)`. First delivery is `created_at + reading_delay_ms + typing_0`. Every later delivery follows the prior delivery by `200 + typing_i` milliseconds. Comparisons against serialized production timestamps MUST allow ±10 ms float/serialization drift (1 ms has been observed). `max_typing_ms` caps typing only; it excludes the fixed 200 ms inter-bubble gap. [Realtime evidence](../research/tested-realtime-memory.md)
 
 ## WebSocket frames
 

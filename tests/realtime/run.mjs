@@ -57,6 +57,13 @@ function uuid(value) {
   assert.match(value, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
 }
 
+function assertWithinMs(actual, expected, tolerance = 10) {
+  assert(
+    Math.abs(actual - expected) <= tolerance,
+    `expected ${actual}ms to be within ±${tolerance}ms of ${expected}ms`,
+  );
+}
+
 function validationShape(response, expectedLoc) {
   assert.equal(response.status, 422);
   exactKeys(response.data, ["error"]);
@@ -534,9 +541,9 @@ if (!creditsDepleted) {
   );
   const typingDelays = wordCounts.map((words) => Math.min(1500, words / 120 * 60_000));
   check("respond: explicit pacing math includes 200ms inter-bubble gap", () => {
-    assert.equal(deliverTimes[0] - createdTimes[0], 500 + typingDelays[0]);
+    assertWithinMs(deliverTimes[0] - createdTimes[0], 500 + typingDelays[0]);
     spacings.forEach((spacing, index) => {
-      assert.equal(spacing, 200 + typingDelays[index + 1]);
+      assertWithinMs(spacing, 200 + typingDelays[index + 1]);
     });
   });
   observations.respond.normal = {
