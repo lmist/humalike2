@@ -26,3 +26,8 @@ node_modules/
 humalike.db*
 .venv/
 service/humalike.db*
+__pycache__/
+*.pyc
+.venv-local/
+disc.db*
+test-p*.db*

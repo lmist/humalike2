@@ -11,6 +11,7 @@ from datetime import timedelta
 
 from sqlalchemy import func, select
 
+from . import metrics
 from .config import settings
 from .db import session
 from .ids import new_uuid
@@ -41,11 +42,13 @@ def reserve(owner_id: str, component: str) -> str:
                    CreditReservation.state == "reserved")
         ).scalar_one()
         if owner is None or owner.credits_balance - reserved < price:
+            metrics.record_credit_denial(component)
             raise InsufficientCredits()
         rid = new_uuid()
         s.add(CreditReservation(id=rid, owner_id=owner_id, component=component,
                                 credits=price, state="reserved",
                                 created_at=now, updated_at=now))
+    metrics.record_credit_reservation(component, price)
     return rid
 
 
@@ -61,6 +64,7 @@ def capture(reservation_id: str) -> None:
         owner.credits_balance -= r.credits
         s.add(UsageEvent(owner_id=r.owner_id, component=r.component,
                          credits=r.credits, at=now))
+        metrics.record_credit_capture(r.component, r.credits)
 
 
 def release(reservation_id: str) -> None:
@@ -70,6 +74,7 @@ def release(reservation_id: str) -> None:
             return
         r.state = "released"
         r.updated_at = utcnow()
+        metrics.record_credit_release(r.component)
 
 
 def reconcile_abandoned(older_than_seconds: float = 600.0) -> int:

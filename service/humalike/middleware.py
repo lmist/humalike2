@@ -8,7 +8,9 @@ emits rate-limit or Retry-After headers. Bearer values are never logged.
 from __future__ import annotations
 
 import json
+import time
 
+from . import metrics
 from .auth import resolve_bearer
 from .billing import count_request
 from .errors import error_body
@@ -29,9 +31,12 @@ class GatewayMiddleware:
             return
 
         rid = request_id()
+        started = time.monotonic()
+        status_seen = {"status": 0}
 
         async def send_with_request_id(message):
             if message["type"] == "http.response.start":
+                status_seen["status"] = message.get("status", 0)
                 headers = [
                     (name, value) for name, value in message.get("headers", [])
                     if name.lower() != b"x-request-id"
@@ -75,3 +80,7 @@ class GatewayMiddleware:
                 "headers": [(b"content-type", b"application/json")],
             })
             await send({"type": "http.response.body", "body": body})
+        finally:
+            metrics.record_request(
+                path, scope.get("method", "GET"), status_seen["status"],
+                (time.monotonic() - started) * 1000.0)
