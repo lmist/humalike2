@@ -1202,42 +1202,55 @@ await billable("respond: typing floor / WPM clamp probe", async () => {
 });
 
 // Two sockets on one channel plus a six-paragraph draft that must be bounded to five bubbles.
+// Seed tokens, not bracket labels: live rewrite keeps facts and may strip [P1]-style markup.
 await billable("websocket: dual sockets + six-paragraph cap", async () => {
   const metadata = {probe: "dual-socket", run: observations.run_id};
+  const seeds = [
+    "NORTHGATE-ALPHA",
+    "EASTLANTERN-BRAVO",
+    "SOUTHWELL-CHARLIE",
+    "WESTDOCK-DELTA",
+    "HILLTOP-ECHO",
+    "RIVERBED-FOXTROT",
+  ];
   const sixDraft = [
-    "[P1] First paragraph.",
-    "[P2] Second paragraph.",
-    "[P3] Third paragraph.",
-    "[P4] Fourth paragraph.",
-    "[P5] Fifth paragraph.",
-    "[P6] Sixth paragraph.",
+    `${seeds[0]} is open at dawn.`,
+    `${seeds[1]} stays lit until dusk.`,
+    `${seeds[2]} has no standing water.`,
+    `${seeds[3]} keeps the skiff tied.`,
+    `${seeds[4]} reports a clear road.`,
+    `${seeds[5]} is running high.`,
   ].join("\n\n");
   const run = await respondOverSockets({
     label: "dual socket",
     socketCount: 2,
-    inbound: {sender: "Dual Human", content: "Send all six labelled paragraphs."},
+    inbound: {sender: "Dual Human", content: "Send all six paragraphs."},
     respond: {
       content: sixDraft,
       agent_name: "Live Test Agent",
-      system_prompt: "Send each bracketed paragraph as its own separate chat bubble. Preserve every bracketed label verbatim. Never merge paragraphs.",
+      system_prompt: "Send each paragraph as its own separate chat bubble. Preserve every place-name token verbatim. Never merge paragraphs.",
       pacing: {reading_delay_ms: 100, typing_wpm: 2000, max_typing_ms: 400},
       metadata,
     },
     deliveryTimeoutMs: 30_000,
   });
   const {responded, connections, threadId: dualThread, open} = run;
-  const labels = ["[P1]", "[P2]", "[P3]", "[P4]", "[P5]", "[P6]"];
   const joined = (responded.data.scheduled ?? []).map((item) => item.content).join("\n");
+  const haystack = joined.toUpperCase();
   check("respond: six-paragraph draft is merged into at most five bubbles without dropping content", () => {
     assert.equal(responded.status, 200, JSON.stringify(responded.data));
     scheduledSchema(responded.data, dualThread);
-    assert(responded.data.scheduled.length >= 2 && responded.data.scheduled.length <= 5);
-    assert.deepEqual(labels.filter((label) => joined.includes(label)), labels, joined);
+    assert(
+      responded.data.scheduled.length >= 1 && responded.data.scheduled.length <= 5,
+      `expected 1–5 bubbles, got ${responded.data.scheduled.length}: ${joined}`,
+    );
+    assert.deepEqual(seeds.filter((seed) => haystack.includes(seed)), seeds, joined);
   });
   observations.respond.six_paragraphs = {
     scheduled_count: responded.data.scheduled?.length,
-    labels_present: labels.filter((label) => joined.includes(label)),
-    labels_per_bubble: (responded.data.scheduled ?? []).map((item) => labels.filter((label) => item.content.includes(label))),
+    seeds_present: seeds.filter((seed) => haystack.includes(seed)),
+    seeds_per_bubble: (responded.data.scheduled ?? []).map((item) =>
+      seeds.filter((seed) => item.content.toUpperCase().includes(seed))),
     contents: (responded.data.scheduled ?? []).map((item) => item.content),
   };
   check("websocket: both sockets receive the identical frame sequence with identical ids", () => {

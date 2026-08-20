@@ -73,7 +73,7 @@ deliver_i  = deliver_{i-1} + 200 + typing_i        (i ≥ 1)
 
 After a newer batch advanced the epoch, the stale response was exactly HTTP 200 `{scheduled:[],superseded:true}`. Component-scoped usage snapshots showed no `turn-taking` or `theoryofmind` charge. [Live runner](../tests/realtime/run.mjs)
 
-A six-paragraph draft under a "never merge" prompt is bounded to at most five bubbles by **merging**, not truncation: all six bracketed labels survived, once as three bubbles of two labels and once as five bubbles with the last two labels merged. [Live runner](../tests/realtime/run.mjs)
+A six-paragraph draft under a "never merge" prompt is bounded to at most five bubbles by **merging**, not truncation. Content seed tokens survive the rewrite, including when the draft collapses to a single bubble; bracket labels such as `[P1]` may be stripped. [Live runner](../tests/realtime/run.mjs)
 
 ## WebSocket delivery
 
