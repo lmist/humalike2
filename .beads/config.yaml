@@ -66,3 +66,5 @@
 # - github.token    → use GITHUB_TOKEN env var instead
 
 no-git-ops: false
+sync:
+    remote: "git+https://github.com/lmist/humalike2.git"
