@@ -1,29 +1,28 @@
 ---
 title: Humalike API Recreation Specification
-description: Index and normative scope for a clean-room compatible Humalike API implementation.
-tags:
-  - humalike
-  - specification
-  - index
+description: Normative index for an end-to-end recreation of the tested Humalike API.
+tags: [humalike, specification, index]
 status: complete
 ---
 # Humalike API recreation specification
 
-## Purpose
+## Purpose and authority
 
-This specification defines a clean-room service compatible with the documented and observed Humalike public API as of 2026-08-20. “MUST,” “SHOULD,” and “MAY” are normative. Where documentation and production differ, production fixtures control exact transport behavior and the discrepancy is explicit. [Research index](../research/index.md)
+This specification defines a clean-room service compatible with the Humalike public API behavior tested on 2026-08-20. “MUST,” “SHOULD,” and “MAY” are normative. When sources conflict, the committed live suites and their tested research digests control observable transport behavior; documentation and paper digests supply untested surface and engine rationale only. [Realtime evidence](../research/tested-realtime-memory.md) [Intelligence evidence](../research/tested-intelligence-personas.md)
+
+Generated prose is nondeterministic. Compatibility therefore means exact status, envelope, field, lifecycle, ordering, billing, and timing invariants plus semantic grounding—not byte-equal model text. [Live conformance strategy](./08-parity-and-open-questions.md)
 
 ## Documents
 
-1. [Product and domain model](./01-product-and-domain.md) — product surface, callers, concepts, entity ownership, and lifecycle.
-2. [Protocol, authentication, and errors](./02-protocol-auth-errors.md) — HTTP conventions, bearer authorization, idempotency, pagination, streaming, and error compatibility.
-3. [Realtime and memory API reference](./03-api-realtime-memory.md) — identity, usage, turn-taking, WebSocket, and Social Memory endpoints.
-4. [Intelligence and personas API reference](./04-api-intelligence-personas.md) — Social Learning, Theory of Mind, observability, audit, persona generation/enhancement/validation, and repositories.
-5. [Core engine design](./05-core-engine.md) — HUMA and LoSoNA algorithms mapped onto API behavior.
-6. [System architecture](./06-system-architecture.md) — services, stores, queues, model serving, security, reliability, and capacity.
-7. [Implementation plan](./07-implementation-plan.md) — phased milestones and delivery order.
-8. [Parity validation and open questions](./08-parity-and-open-questions.md) — golden fixtures, differential tests, acceptance gates, and unresolved behavior.
+1. [Product and domain model](./01-product-and-domain.md) — bounded contexts, ownership, resources, and lifecycles.
+2. [Protocol, authentication, and errors](./02-protocol-auth-errors.md) — HTTP, bearer authorization, per-endpoint errors, idempotency, billing, and WSS rules.
+3. [Realtime and memory API](./03-api-realtime-memory.md) — identity, usage, turn-taking, captured WSS frames, and Social Memory.
+4. [Intelligence and personas API](./04-api-intelligence-personas.md) — Social Learning, foresee, observability, audit, and complete persona resources.
+5. [Core engine design](./05-core-engine.md) — implementation pipelines grounded in HUMA, LoSoNA, and tested behavior.
+6. [System architecture](./06-system-architecture.md) — deployable services, storage, queues, billing, delivery, and security.
+7. [Implementation plan](./07-implementation-plan.md) — phased delivery with live conformance gates.
+8. [Live conformance and open questions](./08-parity-and-open-questions.md) — the 652-assertion validation mechanism and unresolved behavior.
 
-## Evidence
+## Evidence chain
 
-The local [source catalog](../sources/index.md) preserves the docs, both paper bundles, plugin source, and redacted production fixtures. Distilled analyses live in the [research index](../research/index.md). No secret is part of this corpus.
+The primary local source catalog preserves the documentation corpus, both paper bundles, and Hermes plugin source. [Source catalog](../sources/index.md) Production behavior is established by the two committed executable suites and their research digests. [Research index](../research/index.md) Secrets and WSS grants MUST remain outside tracked files. [Live conformance strategy](./08-parity-and-open-questions.md)

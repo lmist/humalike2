@@ -1,86 +1,75 @@
 ---
 title: Protocol, Authentication, and Errors
-description: Normative HTTP, bearer authorization, error, idempotency, billing, and streaming contract.
-tags:
-  - humalike
-  - specification
-  - protocol
-  - authentication
+description: Normative HTTP, authentication, endpoint-specific errors, idempotency, billing, and WSS contract.
+tags: [humalike, specification, protocol, authentication]
 status: complete
 ---
 # Protocol, authentication, and errors
 
 ## HTTP and serialization
 
-The canonical origin MUST be configurable and default to `https://api.humalike.com`. Request and response bodies are UTF-8 JSON. Action and projection routes use POST; owner-scoped job repositories use GET. All timestamps MUST be ISO 8601 UTC. Unknown request fields SHOULD be rejected on strict contracts and preserved only for explicitly opaque `metadata`. No listed collection endpoint is paginated; therefore pagination is out of scope until a collection route exists. [Documented API surface](../research/docs-api-surface.md)
+The origin MUST be configurable and default to `https://api.humalike.com`. Bodies are UTF-8 JSON. Actions and projections use POST; owner-scoped persona/report repositories use GET. Responses sampled across success and failure carried `content-type: application/json` and a non-empty `x-request-id`; every compatible response MUST do the same. No sampled response exposed rate-limit or `Retry-After` headers. [Realtime evidence](../research/tested-realtime-memory.md) [Intelligence evidence](../research/tested-intelligence-personas.md)
 
-## Authentication
+Timestamps MUST be ISO-8601 strings. IDs described as UUIDs MUST validate as UUIDs. Opaque `respond.metadata` MUST be accepted and deeply echoed on every delivered bubble. Unknown-field behavior was not tested and MUST remain configurable rather than asserted as production truth. [Realtime evidence](../research/tested-realtime-memory.md)
 
-Every public endpoint MUST require:
+## Authentication and authorization
 
-```http
-Authorization: Bearer <token>
-```
-
-The implementation MUST support `ak_` API keys and MAY support dashboard session tokens. Raw token material MUST be stored only as a salted hash or HMAC lookup key, compared in constant time, and never logged. Authentication produces `principal {owner_id,key_id,scopes,status}`. Missing, invalid, expired, or revoked credentials MUST return 401. A valid principal lacking route permission MUST return 403. [Documented API surface](../research/docs-api-surface.md)
-
-Observed 401 compatibility body:
+Every public route MUST require `Authorization: Bearer <token>`. Missing authorization, malformed schemes, bare `Bearer`, and invalid `ak_` values returned the exact response below and MUST return HTTP 401. [Realtime evidence](../research/tested-realtime-memory.md)
 
 ```json
 {"error":{"code":"UNAUTHORIZED","message":"missing or invalid credentials"}}
 ```
 
-[Live API experiments](../research/live-api-experiments.md)
+Keys MUST be stored as hashes or HMAC lookup values and MUST never enter logs. Authentication yields an internal owner principal; every repository query and command MUST apply that owner. Valid-but-forbidden 403 behavior is documented but was not exercised. [Documented surface](../research/docs-api-surface.md)
 
-## Authorization
+## Error shapes are route-specific
 
-Each command MUST inject `owner_id`; clients never submit it. Data access predicates MUST include owner id at the repository boundary, not only in handlers. Suggested scopes are `turn-taking`, `social-memory`, `social-learning`, `foresee`, `observability`, `personas`, and `usage:read`. Scope names are internal because public docs do not define them; a compatibility deployment MAY grant all current products to each customer key. [Documented API surface](../research/docs-api-surface.md)
-
-## Errors
-
-The canonical envelope is:
+There is no single production error schema beyond the outer `{error:{code,message,details?}}` shape. Implementations MUST serialize errors by endpoint and failure class. [Intelligence evidence](../research/tested-intelligence-personas.md)
 
 ```ts
-type ErrorEnvelope = {
-  error: {
-    code: string;
-    message: string;
-    details?: unknown;
+type RequestValidationError = {
+  error:{
+    code:"validation_failed";
+    message:"request validation failed";
+    details:{loc:(string|number)[];msg:string;type:string}[];
+  };
+};
+type SemanticValidationError = {
+  error:{
+    code:"VALIDATION_ERROR";
+    message:string;
+    details?:{field:string;message:string}[];
   };
 };
 ```
 
-Handlers MUST emit JSON with an `x-request-id` response header. Validation errors SHOULD match production: HTTP 422, code `validation_failed`, message `request validation failed`, details as `[{loc:(string|number)[],msg:string,type:string}]`. Some docs state `VALIDATION_ERROR` or show `{field,message}`; the production fixture takes precedence for request-schema validation. Semantic/model processing failures MAY retain uppercase `VALIDATION_ERROR` where production parity later proves it. [Live API experiments](../research/live-api-experiments.md)
+| Endpoint/failure | Status and tested body rule |
+| --- | --- |
+| Request-model failures across realtime, learning, foresee, audit prepare, and personas | 422 lowercase `validation_failed`; Pydantic-like `loc/msg/type`. [Realtime evidence](../research/tested-realtime-memory.md) [Intelligence evidence](../research/tested-intelligence-personas.md) |
+| `Report/by-id/not-a-uuid` | 400 uppercase `VALIDATION_ERROR`, message `invalid id`, no required details. [Intelligence evidence](../research/tested-intelligence-personas.md) |
+| Unparseable or over-250-message audit input | 400 uppercase `VALIDATION_ERROR`; message describes the semantic failure. [Intelligence evidence](../research/tested-intelligence-personas.md) |
+| Audit launch with a nonparticipant | 400 uppercase `VALIDATION_ERROR` plus `{field,message}` details. [Intelligence evidence](../research/tested-intelligence-personas.md) |
+| Missing audit projection run | 400 uppercase `VALIDATION_ERROR`. [Intelligence evidence](../research/tested-intelligence-personas.md) |
+| Missing repository UUID | 200 with JSON `null` for Report, Population, Enhancement, and Evaluation. [Intelligence evidence](../research/tested-intelligence-personas.md) |
 
-Status policy:
-
-- 400: syntactically valid but unprocessable input, wrong audit participant, oversized semantic workload.
-- 401: missing/invalid/expired/revoked bearer.
-- 402: insufficient credits before billable work; no charge.
-- 403: authenticated but forbidden.
-- 404 or null/absence: only where later repository fixtures establish exact behavior.
-- 422: schema/range/cardinality validation.
-- 429: throttled; include `Retry-After` and stable error envelope.
-- 502: upstream model/dependency failure; caller may retry with backoff.
-
-[Documented API surface](../research/docs-api-surface.md)
+A 402 means insufficient credits before billable work. The suites encountered no 402 in their final reference runs, so exact 402 body and replenishment behavior remain open. A 502 denotes an upstream dependency failure in documentation. No rate-limit stress was authorized, so 429 body/header behavior is not normative. [Documented surface](../research/docs-api-surface.md) [Live conformance strategy](./08-parity-and-open-questions.md)
 
 ## Idempotency and concurrency
 
-Social Memory ingest MUST accept `Idempotency-Key`. Store `(owner_id,route,key,request_hash,response,status)` atomically. Same key/hash replays the response; same key/different hash MUST reject with 409. The observed replay returned the same 200 body but no replay header, so no header is required. [Live API experiments](../research/live-api-experiments.md)
+Social Memory ingest MUST index idempotency by at least `(owner,route,key)`. The first completed request stores its response and side effects. Every later use of the same key MUST return HTTP 200 with the first response, regardless of whether the body is identical or changed; the later body MUST be silently ignored. Same-body replay MUST NOT duplicate stored facts. No replay-indicator header is required. [Realtime evidence](../research/tested-realtime-memory.md)
 
-Turn batches SHOULD deduplicate by a stable internal request hash/idempotency record, and respond MUST avoid duplicate scheduling. Audit launch MUST be a no-op after first launch. Thread opening with a supplied UUID is idempotent per owner. Epoch compare-and-schedule MUST be one transaction: stale replies return 200 `{scheduled:[],superseded:true}` and incur no charge. [Documented API surface](../research/docs-api-surface.md)
+Thread reopen with an existing owner-scoped UUID rotates the WSS grant while retaining thread state. Audit launch is first-write-wins: a repeated launch returns 200, retains the first `agent_name`, and does not restart work. Respond MUST compare and schedule against the epoch atomically; stale work returns exactly `{scheduled:[],superseded:true}` and adds no turn-taking or Theory-of-Mind charge. [Realtime evidence](../research/tested-realtime-memory.md) [Intelligence evidence](../research/tested-intelligence-personas.md)
 
 ## Billing
 
-A billable command MUST reserve/check credits before model execution, capture only after successful completion, and release reservation on failure. Free/short-circuited/superseded paths MUST bypass capture. Usage projection counts completed captures only. Respond captures two product units (reply plus Theory-of-Mind refinement) according to docs. [Documented API surface](../research/docs-api-surface.md)
+A billable command SHOULD reserve/check credits before model work and capture after successful completion. Superseded, short-circuited, and terminal polling paths MUST not capture. The live suites prove terminal re-polling of completed audit/persona resources changes billed calls and credits by zero. Component prices observed during shared runs are informative, not stable public pricing. [Realtime evidence](../research/tested-realtime-memory.md) [Intelligence evidence](../research/tested-intelligence-personas.md)
 
-## Streaming
+## WebSocket protocol
 
-`open_thread` returns a short-lived signed WSS URL. The signature MUST bind owner, channel, expiry, and a nonce; it MUST NOT expose the API key. New connections after expiry fail, while an attached connection MAY remain until disconnect. Frames use `{id,type,channel,ts,data}` and MUST preserve per-channel message order. The observed grant path was `/v1/ws/turn-taking-thread` with approximately 30-second connection TTL. [Live API experiments](../research/live-api-experiments.md)
+`open_thread` returns a self-authenticating `wss://api.humalike.com/v1/ws/turn-taking-thread?...` grant with an observed lifetime near 30 seconds. A connection established before expiry remains open after expiry. A connection attempted about 1.5 seconds after expiry upgrades, then closes with WebSocket code `4000` and an empty reason. Reopening the thread issues a new grant for the same channel. [Realtime evidence](../research/tested-realtime-memory.md)
 
-Clients MUST reconnect by reopening the thread. The server SHOULD emit an `attached` handshake, typing toggles, one or more ordered message frames, and optional signal frames. Actual production frame fixtures remain an open parity item. [Plugin analysis](../research/plugin-analysis.md)
+The initial `attached` frame has a distinct three-field shape; only later events use the five-field event envelope. Message order MUST be attached, typing true, one or more messages, typing false. [Realtime API](./03-api-realtime-memory.md)
 
 ## Rate limiting
 
-No sampled response exposed rate-limit headers, and no stress test was attempted. Implement token-bucket limits per key/account and expensive component, return 429 with `Retry-After`, and avoid inventing limit headers on successful responses until production behavior is observed. [Live API experiments](../research/live-api-experiments.md)
+No sampled response exposed rate headers, and no stress test established quotas. A recreation MAY enforce internal limits, but successful responses MUST NOT invent production rate headers as part of compatibility. Exact 429 behavior remains an open question. [Realtime evidence](../research/tested-realtime-memory.md) [Intelligence evidence](../research/tested-intelligence-personas.md)

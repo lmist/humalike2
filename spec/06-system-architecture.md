@@ -1,58 +1,45 @@
 ---
 title: System Architecture
-description: Deployable service architecture, data model, queues, model serving, reliability, and security.
-tags:
-  - humalike
-  - specification
-  - architecture
+description: Deployable architecture for the tested Humalike-compatible service.
+tags: [humalike, specification, architecture]
 status: complete
 ---
 # System architecture
 
-## Service topology
+## Topology
 
-Deploy an API gateway/auth layer in front of bounded services: Identity/Credits, Turn-Taking, Realtime Delivery, Social Memory, Social Learning, Theory of Mind, Observability, Personas, and Job Orchestrator. Start as a modular monolith with explicit interfaces and one deployment for low operational cost; split realtime delivery and model workers first when load requires it. [Product and domain model](./01-product-and-domain.md)
+Start as a modular service with explicit Identity/Credits, Turn-Taking, Realtime Delivery, Social Memory, Social Learning, Theory of Mind, Observability, Personas, and Job Orchestration modules. HTTP and WSS may share a deployment initially; realtime fanout and model workers SHOULD scale independently when load requires it. This partition follows the public bounded contexts. [Domain model](./01-product-and-domain.md)
 
-## Data stores
+## Durable state
 
-- PostgreSQL: accounts, key hashes/scopes, credit ledger/reservations/captures, idempotency records, threads, epochs, inbound events, strategies, schedules, jobs, reports, persona resources, audit runs.
-- Object storage: large raw transcripts, generated markdown, paper-independent customer artifacts, and immutable model traces under retention policy.
-- Vector-capable PostgreSQL or dedicated vector store: message/fact embeddings and person-centric memory facts, always owner/bank partitioned.
-- Redis: short-lived WSS grants/nonces, rate buckets, worker leases, pub/sub fanout, hot thread state.
-- Durable queue: model jobs, memory extraction, audit stages, persona generation, schedule delivery, and retries with dead-letter queues.
+PostgreSQL SHOULD store accounts, key hashes, owner policies, credit reservations/captures, idempotency first results, threads/integrations/epochs, inbound batches/events, schedules, jobs, audit sections, reports, persona resources, and outbox records. Vector-capable storage SHOULD hold owner/scope-partitioned memory facts and embeddings. Redis or an equivalent ephemeral store MAY hold WSS grant nonces, rate state, worker leases, and fanout subscriptions. [Core engine](./05-core-engine.md)
 
-[Core engine](./05-core-engine.md)
+Raw transcripts and model traces MAY use encrypted object storage under explicit retention policy. Public repository projections MUST read durable state rather than worker memory, and random/non-owned resource ids MUST not disclose existence. [Intelligence API](./04-api-intelligence-personas.md)
 
-## Command path
+## Command transaction
 
-Gateway authenticates and assigns request id; validates JSON; checks authorization/rate; invokes domain transaction. Billable commands reserve credits, enqueue or execute model work, persist outcome, capture charge, and return. Failures release reservation. Every write uses an outbox row in the same database transaction; an outbox relay publishes jobs/events to avoid dual-write loss. [Protocol specification](./02-protocol-auth-errors.md)
+The gateway authenticates, assigns `x-request-id`, validates route-specific JSON, and injects owner identity. A billable command reserves credits, performs or enqueues work, commits result plus outbox, captures the charge, and returns. Failures release reservations; short-circuited, superseded, and terminal polling paths bypass capture. [Protocol](./02-protocol-auth-errors.md)
 
-## Turn-taking path
+Use an outbox in the same database transaction as schedules and job state so delivery/work publication cannot be lost between database commit and queue publish. Idempotency keys MUST protect both response replay and side effects. [Protocol](./02-protocol-auth-errors.md)
 
-`open_thread` is database-only plus signed grant issuance. `submit_messages` serializes by thread, appends batch, advances epoch, optionally extracts signals/memory, then short-circuits or invokes Router. Target p95: under 750 ms short-circuit and under 3 seconds modeled decision, consistent with the 0.6/1.9 second live observations. `respond` checks epoch, runs refinement/naturalization, stores schedules/outbox, and returns; target p95 under 5 seconds before scheduled delivery. [Live API experiments](../research/live-api-experiments.md)
+## Turn-taking and WSS
 
-A scheduler publishes due typing/message events to a per-thread ordered stream. Realtime gateways subscribe, enforce channel authorization, and fan out with backpressure. Delivery is at-least-once; frame ids let clients deduplicate. Ordering key is thread id. On restart, pending schedules are reloaded from the database. [Realtime API](./03-api-realtime-memory.md)
+`open_thread` is a database transaction plus signed short-lived grant issuance. `submit_messages` serializes by thread, appends one batch, advances one epoch, updates integrated memory, and either short-circuits or runs the router. `respond` checks epoch, performs refinement/splitting, persists all bubbles, and commits delivery events before returning. [Realtime API](./03-api-realtime-memory.md)
 
-## Async jobs
+A scheduler publishes due events on a stream ordered by thread. The WSS gateway first emits the distinct attached frame, then typing/message events. It generates delivery message ids independently from schedule ids and copies metadata to every bubble. An established connection does not depend on continued grant validity; late expired grants close with code 4000, and reopening creates a new grant. [Realtime evidence](../research/tested-realtime-memory.md)
 
-Job rows carry `id,owner,type,status,stage,input_ref,result_ref,error,attempt,prompt_version,model_version,created_at,updated_at`. Workers claim with leases, heartbeat, checkpoint stage output, and use idempotent stage keys. Polling reads the durable projection, not worker memory. Audit launch uses compare-and-set from prepared to queued. [Intelligence API](./04-api-intelligence-personas.md)
+## Asynchronous resources
 
-## Model serving
+Population, enhancement, and evaluation jobs carry durable request echoes, nullable result/error, status, timestamps, and route-specific progress. Audit stores transcript, selected agent, and each nullable output section independently. Workers claim jobs with leases and idempotent stage keys; polling is a read-only projection and MUST not bill. [Intelligence API](./04-api-intelligence-personas.md)
 
-Use a provider abstraction with per-stage capability requirements: structured output, context window, latency budget, and cost ceiling. Route fast decision/recall synthesis to low-latency models, refinement to a socially capable model, and batch analysis/personas to larger models. Cache only owner-safe deterministic intermediates. Embed messages asynchronously and maintain provider circuit breakers. [Core engine](./05-core-engine.md)
+Queue slow population/enhancement/audit work separately from reply-path decisions. The observed durations—about 52, 37, and 20 seconds respectively—justify long worker leases and multi-minute client timeouts, while evaluations completed in about 3.5 seconds. These observations are capacity inputs, not guaranteed SLOs. [Intelligence evidence](../research/tested-intelligence-personas.md)
 
-## Capacity and scaling
+## Reliability and scaling
 
-Partition thread/event/schedule work by thread id and memory by `(owner,bank)`. Horizontally scale stateless HTTP and WebSocket gateways. Bound model concurrency per account/provider and queue slow jobs separately from reply-path calls. Keep per-turn transcript windows bounded while retaining append-only source history. Apply backpressure before accepting work that cannot meet timeouts. [Plugin analysis](../research/plugin-analysis.md)
+Partition turn delivery by thread and memory work by `(owner,scope)`. Bound model concurrency per owner and provider. Retry only transient provider/queue failures with jitter; do not retry semantic 4xx. Recover schedules from durable state after restart and reconcile abandoned credit reservations. [Protocol](./02-protocol-auth-errors.md)
 
-## Reliability
-
-Use timeouts by class: approximately 5 seconds for database/free paths, 30 seconds for turn transport compatibility, 120 seconds for analysis, and minutes for async workers. Retry transient model/queue errors with exponential jitter; never blindly retry semantic 4xx. Persist idempotency and billing state before returning. Reconcile stuck credit reservations and scheduled messages. Expose health, queue lag, model error rate, schedule lateness, WSS connections, and parity test results. [Plugin analysis](../research/plugin-analysis.md)
+Track request latency, model stage latency/cost, queue lag, schedule lateness, WSS connections/closes, epoch supersessions, idempotency replays, credit reservations/captures, and conformance suite results. Generated claims SHOULD retain internal evidence ids for debugging. [Core engine](./05-core-engine.md)
 
 ## Security and privacy
 
-Encrypt transport and data at rest; place secrets in a secret manager; redact bearer, WSS query grants, transcript text, emails, and account ids from routine logs. Enforce tenant predicates in repositories and row-level security as defense in depth. Scope signed WSS grants to one channel and expiry. Provide configurable retention/deletion internally even though the compatibility API exposes no delete routes. Audit administrative access and model-provider egress. [Protocol specification](./02-protocol-auth-errors.md)
-
-## Observability
-
-Propagate request id through database, queue, provider, and WebSocket frames. Store model stage latency/token/cost, selected strategy/scores, prompt and model versions, retrieval evidence ids, billing reservation/capture, and error taxonomy. Keep customer-visible generated claims evidence-linked internally to support debugging and audit reproducibility. [Core engine](./05-core-engine.md)
+Use TLS, encryption at rest, secret management, hashed bearer lookup, owner predicates, and row-level security defense in depth. Redact bearer values, WSS query grants, account ids, and transcript bodies from routine logs. Scope each WSS grant to one owner/channel/expiry/nonce. Browser clients MUST not receive customer API keys. [Protocol](./02-protocol-auth-errors.md) [Plugin analysis](../research/plugin-analysis.md)

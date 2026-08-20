@@ -1,70 +1,74 @@
 ---
-title: Parity Validation and Open Questions
-description: Differential validation strategy, acceptance gates, known discrepancies, and unresolved contracts.
-tags:
-  - humalike
-  - specification
-  - testing
-  - open-questions
+title: Live Conformance and Open Questions
+description: Production parity strategy based on 652 live assertions and explicit unresolved behavior.
+tags: [humalike, specification, testing, open-questions]
 status: complete
 ---
-# Parity validation and open questions
+# Live conformance and open questions
 
-## Golden fixture strategy
+## Normative parity mechanism
 
-Load each record in [raw production experiments](../sources/live/source.md), send the redacted request shape to the recreation, and assert method/path, status, required headers, envelope, field types, error casing, and invariants. Normalize timestamps, ids, request ids, account ids, WSS signatures, generated prose, and delivery times. For generated prose, assert semantic facts and schema rather than exact wording. [Live API experiments](../research/live-api-experiments.md)
+The committed suites are the transport and behavior oracle:
 
-Required exact gates:
+- `tests/realtime/run.sh` runs `tests/realtime/run.mjs` plus the WSS driver and contains **60 passing live assertions** covering identity, usage, authentication, validation, threads, epochs, decisions, events, pacing, WSS, Social Signals negative behavior, Social Memory, idempotency, and billing deltas. [Realtime evidence](../research/tested-realtime-memory.md)
+- `tests/intelligence/run.sh` runs `tests/intelligence/run.mjs` and contains **592 passing live assertions** covering Social Learning, foresee, analyze/report absence, audit, persona generation/enhancement/validation, endpoint-specific errors, timings, and free terminal polling. [Intelligence evidence](../research/tested-intelligence-personas.md)
 
-- Missing/invalid bearer: 401 and exact observed error code/message.
-- Valid whoami and seven-point usage schema.
-- Invalid UUID/empty question: 422 lowercase `validation_failed` with `loc/msg/type` details.
-- Open thread: owner fields, channel naming, WSS path/expiry class.
-- Event: 200 `{tags:[]}`.
-- Short-circuit submit: `speak`, epoch increment, empty tags, no billed model call.
-- Normal submit: valid decision/epoch and memory field.
-- Respond: schedule schema including observed timestamps, refinement allowed, `superseded:false`.
-- Ingest and same-key replay: same 200 body without requiring replay header.
-- Recall/ask: grounded answers with no invented person facts.
+Together, the **652 live assertions** are the normative parity gate. They make real calls with fresh identifiers and MUST remain independent of recorded production responses. [Realtime runner](../tests/realtime/run.mjs) [Intelligence runner](../tests/intelligence/run.mjs)
 
-[Live API experiments](../research/live-api-experiments.md)
+## Running the suites
 
-## Differential expansion
+Use Node 24 and a funded test key. The scripts load `HUMALIKE_API_KEY` from the environment or project `.env`; `.env` MUST never be tracked. [Realtime runner](../tests/realtime/run.sh) [Intelligence runner](../tests/intelligence/run.sh)
 
-Against a dedicated low-cost account, add one probe per undocumented edge: wrong-owner repository ids, nonexistent ids, stale respond, repeated respond, reopen supplied nonexistent UUID, integration update semantics, empty Social Memory scope, duplicate message ids, max lengths ±1, 20/21 messages, metadata byte boundary, pacing bounds, idempotency same-key/different-body, audit launch repeat, failed async job body, and WSS attached/typing/message/signal frames. Never stress rate limits without explicit budget and permission. [Documented API surface](../research/docs-api-surface.md)
+```sh
+set -a
+source /Users/lou/human/.env
+set +a
+./tests/realtime/run.sh
+./tests/intelligence/run.sh
+```
 
-## LoSoNA behavioral parity
+Run sequentially when measuring component credit deltas; concurrent runs mix account-wide usage buckets. The intelligence run can take several minutes because population and enhancement are asynchronous. A 402 MUST stop further discretionary billable verification, be reported as an environment/budget blocker, and MUST NOT be reinterpreted as a product regression. [Realtime evidence](../research/tested-realtime-memory.md) [Intelligence evidence](../research/tested-intelligence-personas.md)
 
-Run the 38-scenario protocol with three trials for naive and norm-informed prompts. Track majority accuracy, compliance, consistency, recovered failures, introduced regressions, scenario-bootstrap intervals, and human audit. A replacement is acceptable only if it improves norm compliance without a material regression/safety increase on naive successes. [LoSoNA paper digest](../research/paper-losona.md)
+## Assertion policy
 
-## System acceptance
+Exact assertions MUST cover method/path, status, content type, `x-request-id`, field keys, enum values, nullability, error casing/details, owner-safe absence, idempotency, epoch progression, schedule positions/times, WSS order/ids/metadata, job transitions, and billing invariants. [Realtime evidence](../research/tested-realtime-memory.md) [Intelligence evidence](../research/tested-intelligence-personas.md)
 
-- Cross-tenant access is impossible at repository and query layers.
-- Every billable success has one capture; failed/superseded/short-circuit calls have none.
-- Per-thread epochs and WebSocket messages preserve order under concurrency/restart.
-- Async jobs are idempotent, observable, retryable, and terminal.
-- P95 latency meets architecture targets at expected load.
-- No credential or WSS grant appears in logs, fixtures, markdown, or commits.
-- Markdown/API docs and typed schemas derive from one contract source.
+Generated prose MUST be tested by type and semantic invariants: required facts are present, ignored facts are absent, seed markers survive, ordering is preserved, evidence ids originate in input, and enum/range constraints hold. Tests MUST NOT require exact paraphrases. A nondeterministic decision such as `stay_silent` may be captured as proven behavior without requiring the model to choose it on every future run; the response schema remains exact whenever it occurs. [Realtime evidence](../research/tested-realtime-memory.md)
 
-## Confirmed discrepancies
+New production discoveries MUST first become fresh live assertions, then update the tested research digest, and only then change normative prose. Documentation-only fields remain non-normative where live behavior contradicts them. [Specification index](./00-index.md)
 
-Production uses lowercase `validation_failed` with Pydantic-like details where docs often state uppercase `VALIDATION_ERROR`. Production scheduled messages added `created_at` and `updated_at`. Production refinement changed trivial draft text. No rate headers were observed. [Live API experiments](../research/live-api-experiments.md)
+## Credit awareness
 
-## Open questions
+The expanded realtime reference run attributed 25 calls and 32 credits to its own components after excluding a concurrent persona run. The intelligence reference run observed substantial persona cost and an account-wide 759-credit delta with sibling activity; terminal re-polling itself added exactly zero calls and credits. These values are planning observations, not guaranteed prices. Use dedicated keys or sequential runs for clean attribution and set an explicit verification budget. [Realtime evidence](../research/tested-realtime-memory.md) [Intelligence evidence](../research/tested-intelligence-personas.md)
 
-1. Exact request/response schemas for `foresee`, full `extract` profile, persona generation controls/result wrappers, audit prepare/run, and report repository absence.
-2. Exact defaults for service pacing, minimum typing delay, bubble splitting, decision model, strategy catalog, prompts, and tie-breaking.
-3. Exact WSS `attached` frame and live typing/message/signal frames; reconnect behavior for already attached sockets.
-4. Whether successful responses ever expose rate-limit headers and the actual quotas.
-5. Exact same-key/different-body idempotency response and whether replay has an unobserved cache indicator.
-6. Whether thread reopening with a supplied nonexistent UUID creates or rejects; docs prose is not fully consistent.
-7. Repository behavior for nonexistent versus other-owner ids: null, 404, or another envelope.
-8. Credit prices, reservation TTLs, component naming, and post-experiment usage delay.
-9. Audit raw transcript field name/size limits and complete final result schema.
-10. Persona blueprint field kinds, dependency expressions, sampling controls, diversity thresholds, and generation hyperparameters.
-11. Data retention, deletion, residency, encryption, compliance, and customer export guarantees.
-12. Models/providers, prompt versions, training/fine-tuning data, and safety classifiers used by production.
-13. Device authorization routes' public support status and privileged gateway credential contract.
+## Release gates
 
-These unknowns MUST remain configuration or compatibility flags; they MUST NOT be silently invented as established production behavior. [Research index](../research/index.md)
+A release candidate MUST:
+
+- pass both suites with zero failed assertions, except that a clearly identified 402 blocks billable verification rather than changing the contract;
+- preserve first-write idempotency and stale-epoch atomicity under local concurrency tests;
+- prevent cross-tenant reads in local security tests;
+- emit no bearer key, WSS grant, or account identity in logs or tracked files;
+- keep public docs and generated client types synchronized with this specification; and
+- record which production open questions remain unsupported.
+
+The cross-tenant, concurrency, and secret-handling gates are internal engineering tests because a single production key cannot safely establish them. [Protocol](./02-protocol-auth-errors.md)
+
+## Corrected contradictions
+
+The live contract supersedes these earlier assumptions: `attached` is a distinct `{type,channel,server_time}` frame; late expired grants close with code 4000 after upgrade; delivered WSS message ids differ from HTTP schedule ids; changed-body idempotency replay returns the first 200 result and preserves only the first body; same-body replay does not duplicate memory; the 200 ms bubble gap sits outside `max_typing_ms`; metadata echoes on every zero-based bubble; Social Signals produced neither frames nor tags under documented triggers; analyze exposes no report identifier; enhanced personas can have empty fields; blueprints include their full extended schema and explicit nulls; constraints use an aggregate gate; audit progress uses nullable sections; and error shape varies by endpoint. [Realtime evidence](../research/tested-realtime-memory.md) [Intelligence evidence](../research/tested-intelligence-personas.md)
+
+## Honest open questions
+
+1. **Analyze report linkage:** the action exposes no report id or location, so read-back of that exact report is unreachable through the tested public flow. [Intelligence evidence](../research/tested-intelligence-personas.md)
+2. **Social Signals trigger:** all documented trigger combinations produced empty tags and no signal event; another undocumented trigger may exist, but no signal payload is normative. [Realtime evidence](../research/tested-realtime-memory.md)
+3. **Tenant boundaries:** nonexistent repository ids return `null`, but other-owner behavior cannot be tested with one key. [Intelligence evidence](../research/tested-intelligence-personas.md)
+4. **Credit exhaustion:** exact 402 body, reservation release, replenishment timing, and recovery after funding were not exercised in the final runs. [Intelligence evidence](../research/tested-intelligence-personas.md)
+5. **Authorization and throttling:** exact 403, 429, quotas, and successful rate headers are untested; no rate headers appeared in sampled traffic. [Realtime evidence](../research/tested-realtime-memory.md) [Intelligence evidence](../research/tested-intelligence-personas.md)
+6. **Thread edge cases:** reopening an existing UUID is proven; behavior for a caller-supplied nonexistent UUID and cross-owner UUID is not. [Realtime evidence](../research/tested-realtime-memory.md)
+7. **Grant boundary:** code 4000 is proven around 1.5 seconds after expiry, not for every possible late-connect interval. [Realtime evidence](../research/tested-realtime-memory.md)
+8. **Strictness and defaults:** unknown request fields, default pacing, minimum typing delay, split policy, decision prompts/models, and strategy tie-breaking remain unknown. [Realtime evidence](../research/tested-realtime-memory.md) [HUMA digest](../research/paper-huma.md)
+9. **Repository linkage and failures:** stored Report success shape through a reachable id, other-owner absence, and terminal failed persona resource payloads remain unobserved. [Intelligence evidence](../research/tested-intelligence-personas.md)
+10. **Operational policy:** retention, deletion, residency, production encryption details, provider/model versions, prompt versions, and device-authorization support are not public behavioral contracts. [Plugin analysis](../research/plugin-analysis.md) [HUMA digest](../research/paper-huma.md)
+
+Unknowns MUST remain configuration, local safety requirements, or explicitly unsupported behavior. They MUST NOT be represented as established production behavior.

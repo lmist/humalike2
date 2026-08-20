@@ -124,4 +124,4 @@ Poll `pending|running|succeeded|failed`. Success result contains overall `passed
 
 ## Documentary caveats
 
-The prose-oriented export does not expose a formal OpenAPI schema, and some `ParamField` blocks omit field names in the text conversion. Exact generated-persona and foresee nested shapes should therefore be treated as best-effort unless fixture coverage is added. Error-code casing is inconsistent even within docs (`VALIDATION_ERROR` versus `validation_failed`), which live probing confirms is not cosmetic. [Documentation corpus](../sources/docs/source.md)
+The prose-oriented export does not expose a formal OpenAPI schema, and some `ParamField` blocks omit field names in the text conversion. Exact generated-persona and foresee nested shapes should therefore be treated as best-effort unless live conformance coverage is added. Error-code casing is inconsistent even within docs (`VALIDATION_ERROR` versus `validation_failed`), which live probing confirms is not cosmetic. [Documentation corpus](../sources/docs/source.md)

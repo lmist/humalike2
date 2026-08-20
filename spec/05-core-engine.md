@@ -1,57 +1,53 @@
 ---
 title: Core Engine Design
-description: Algorithms and model pipelines implementing humanlike timing, norm adaptation, memory, analysis, and personas.
-tags:
-  - humalike
-  - specification
-  - engine
-  - algorithms
+description: Reimplementation pipelines for routing, memory, intelligence, observability, and personas.
+tags: [humalike, specification, engine, algorithms]
 status: complete
 ---
 # Core engine design
 
-## Turn router
+This document specifies one sufficient internal design. Internal models and prompts may differ, but every externally visible result MUST satisfy the [live conformance contract](./08-parity-and-open-questions.md).
 
-Implement HUMA's strategy router over a configurable catalog of approximately 20 strategies. For each thread state and inbound batch, one structured-output model call returns appropriateness `A_s ∈ [0,1]` for each strategy. Maintain a recency ring of length `N` and compute `T_s=min(1,k/N)` for last use `k` steps ago; exempt Keep Silent, Directly Mentioned, Continue Pending, and Tell a Story with `T_s=1`. Select maximum `A_s+T_s`, with deterministic tie-breaking and explicit policy overrides for `skip_decide`, media, safety, direct mention, and account configuration. [HUMA paper digest](../research/paper-huma.md)
+## Turn router and interruption
 
-Persist prompt/model/version/scores/selection/latency for replay. A production catalog MUST include a strategy id, description, eligibility predicate, timeliness exemption, and tool policy. Because the paper does not publish all 20 definitions or prompts, keep this catalog versioned and test behavior, not assumed wording. [HUMA paper digest](../research/paper-huma.md)
+Implement a configurable HUMA-style strategy router. HUMA scores strategy appropriateness `A_s`, adds recency timeliness `T_s=min(1,k/N)`, exempts Keep Silent, Directly Mentioned, Continue Pending, and Tell a Story from decay, and selects the maximum. The paper does not publish its exact model, prompts, or complete strategy catalog, so those are implementation choices rather than production claims. [HUMA digest](../research/paper-huma.md)
 
-## Epoch interruption
+Each accepted batch MUST append its messages and increment the thread epoch once in one serialized transaction. `skip_decide` and media MUST return `speak` without modeled decision work. The modeled path MUST be capable of both `speak` and `stay_silent`; the captured silent shape has empty tags/context. Respond MUST compare the supplied epoch immediately before billing and scheduling so newer input suppresses stale work. [Realtime evidence](../research/tested-realtime-memory.md)
 
-Each accepted batch increments thread epoch inside a serializable transaction. Model work records its source epoch. Respond atomically compares source/current epoch before charging or scheduling. Incoming events during generation are queued; stale intention/scratchpad are included in the next router context so Continue Pending can recover. This is the service equivalent of HUMA's interruption architecture. [HUMA paper digest](../research/paper-huma.md)
+Persist router input references, prompt/model version, strategy scores, decision, epoch, and latency for debugging. This trace is internal and MUST NOT alter public response fields. [HUMA digest](../research/paper-huma.md)
 
-## Reply refinement and pacing
+## Refinement, splitting, and pacing
 
-A structured Theory-of-Mind pass receives thread transcript, recalled context, local voice card, agent name/system prompt, and draft. It returns predicted reception, risk factors, refined content, and confidence. A naturalizer then splits content into 1–5 bubbles while preserving meaning. The production fixture proves that even a short draft may be paraphrased. [Live API experiments](../research/live-api-experiments.md)
+A Theory-of-Mind stage consumes transcript, recalled context, learned social profile, system prompt, agent identity, and draft. It produces modeled mental state/reaction and a refined reply; a naturalizer may materially rewrite and split into 1–5 bubbles. Exact prose is not preserved, but required facts and intent SHOULD remain grounded. [Intelligence evidence](../research/tested-intelligence-personas.md) [Realtime evidence](../research/tested-realtime-memory.md)
 
-For each bubble, derive words and typing time from `60000 * words / typing_wpm`, clamp to configured minimum and `max_typing_ms`, add optional reading delay before the first bubble, and add a small configurable inter-bubble pause. Persist the full schedule before publishing. Emit typing true, ordered message frames at delivery timestamps, then typing false. Default service values are unknown; the Hermes client chooses 115 WPM while docs mention a stock 150 WPM, so defaults MUST be parity-configurable. [Plugin analysis](../research/plugin-analysis.md)
+For each bubble, compute `typing_ms=min(word_count/typing_wpm*60000,max_typing_ms)`. Add reading delay only before the first bubble and exactly 200 ms plus the next bubble’s typing time between later deliveries. Persist all schedules before publication. Emit typing true, ordered messages, then typing false. Each delivery creates a distinct WSS message UUID and copies request metadata into every bubble. [Realtime evidence](../research/tested-realtime-memory.md)
 
-## Social norm adaptation
-
-Use LoSoNA's norm-informed approach as one signal, not an unconditional prompt. Retrieve analogous precedent turns and infer candidate local norms with evidence. Inject a compact voice/norm card into Router and refinement. Gate adoption by confidence, recency, and safety policy; models in LoSoNA sometimes regressed under explicit norm prompting. [LoSoNA paper digest](../research/paper-losona.md)
-
-Build a continuous evaluation set using the released scenario structure: 20–34-turn group chats, two or three demonstrations, one elicitor, three samples, fixed judge, majority accuracy, compliance, consistency, paired recovery/regression, and scenario bootstrap intervals. Maintain both naive and norm-informed canaries per model. [LoSoNA paper digest](../research/paper-losona.md)
+Default pacing and split policy are not known. The Hermes client uses 115 WPM, while live tests supplied explicit pacing; defaults MUST remain configurable and are not conformance claims. [Plugin analysis](../research/plugin-analysis.md) [Realtime evidence](../research/tested-realtime-memory.md)
 
 ## Social Memory
 
-Store raw attributed messages append-only. Asynchronously extract subject-centric facts `{subject,predicate,value,evidence_message_ids,confidence,valid_from,invalidated_by}` and embeddings. Recall combines speaker-aware query embedding, lexical/entity retrieval, recency, confidence, and contradiction resolution, then generates a short prompt-ready context. Ask performs the same retrieval but generates a direct answer and SHOULD cite internal evidence in traces even though public output is prose only. [Documented API surface](../research/docs-api-surface.md)
+Store raw messages in owner/scope order. Idempotency storage MUST retain the first response and body association for each key; later identical or changed bodies return the first result and perform no append. [Realtime evidence](../research/tested-realtime-memory.md)
 
-Integrated thread memory uses the thread's bank id. The decision path records inbound messages, retrieves once, and returns that same context to the caller; the caller may pass it back through system prompt for reply refinement. Separate agents MUST not share a bank unless intentionally configured. [Plugin analysis](../research/plugin-analysis.md)
+Extract subject-centric facts with evidence links and contradiction metadata. Recall combines entity/speaker-aware lexical and vector retrieval, confidence, recency, and contradiction resolution, then renders concise context. Ask uses the same evidence retrieval but renders a direct answer. The public text MUST preserve tested subject attribution and transcript ordering while allowing paraphrase. [Realtime evidence](../research/tested-realtime-memory.md)
 
-## Social Learning
+## Social Learning and norm adaptation
 
-Parse attributed transcript, compute durable style/norm features, and produce a prompt block. Features include register, terseness, message length, emoji/slang/punctuation/capitalization, response conventions, directness, greetings/sign-offs, and local interaction rules. Keep style separate from factual memory to avoid stale duplication. Refresh asynchronously over a bounded window and persist versioned cards. [Plugin analysis](../research/plugin-analysis.md)
+Normalize attributed messages and derive the exact profile fields specified by the API, then render `prompt_block`. Keep learned register, style, norms, and local vocabulary separate from durable facts. A client-compatible implementation SHOULD refresh over a bounded recent window and inject the current prompt block into later turns. [Intelligence evidence](../research/tested-intelligence-personas.md) [Plugin analysis](../research/plugin-analysis.md)
 
-## Observability
+LoSoNA shows that explicit norm prompting improves some models and regresses others. Treat inferred local norms as confidence-weighted evidence, not unconditional commands. Maintain naive and norm-informed evaluations with three samples, paired recovery/regression, consistency, and scenario-level confidence intervals. [LoSoNA digest](../research/paper-losona.md)
 
-Normalize one conversation and segment contiguous interactions into the six canonical types. For each non-agent person, aggregate stance counts, reception, frustration, trend, evidence, key moments, and confidence. Findings must be evidence-backed and produce a concrete recommendation plus optional rewritten reply/component mapping. Compute deterministic totals/distributions from model-produced segmentation rather than asking the model to count. [Documented API surface](../research/docs-api-surface.md)
+## Observability and audit
 
-Audit first parses raw text into messages/speakers, then waits for explicit agent selection. The launched pipeline runs reception analysis, missing-context retrieval analysis, per-turn risk scoring, and targeted rewrites. Each stage writes partial state so polling remains informative and retries resume idempotently. [Documented API surface](../research/docs-api-surface.md)
+Analyze one normalized conversation. A model may identify interactions, reception, risks, and findings, but code MUST deterministically populate all-six-type totals/distributions and validate referenced message ids. The action returns the complete report without adding an id. [Intelligence evidence](../research/tested-intelligence-personas.md)
+
+Audit preparation parses raw speaker-labelled text and persists the parked run. Launch performs a first-write-wins transition with one selected participant. Workers SHOULD execute report, context/read, verdict, and rewrite stages separately, persisting each section as it completes so the projection exposes nullable-section progress and retries can resume. [Intelligence evidence](../research/tested-intelligence-personas.md)
 
 ## Personas
 
-Generate a blueprint before personas: field DAG/order, distributions, ordered values, dependencies, and constraints. Sample categorical/numeric fields conditionally in topological order; reject/resample constraint violations; render identity/backstory/system prompt/markdown from sampled facts. Validate schema and constraints deterministically, then compute pairwise diversity and marginal fidelity. Enhancement treats seed text as immutable facts and fills the same target schema. [Documented API surface](../research/docs-api-surface.md)
+Generation MUST design the full blueprint first, including explicit nulls, field labels/formulas, categorical or numeric distributions, conditionals, style axes, name origins, rationale, and sources. Sample causal fields in `order`; then derive text/derived fields and render each flat string map, system prompt, and markdown. Compute diversity and marginals deterministically from the completed batch. [Intelligence evidence](../research/tested-intelligence-personas.md)
 
-## Model abstraction and safety
+Enhancement treats input text as immutable seed evidence and may render it into prompt/markdown while returning `fields:{}`. Validation normalizes input blueprint shape, runs a schema gate, aggregates all applicable named constraints into one constraints gate per persona, then computes batch gates, soft scores, diversity, marginals, and notes. Job success and quality `passed` MUST remain independent. [Intelligence evidence](../research/tested-intelligence-personas.md)
 
-All model stages MUST use versioned prompt templates, JSON-schema outputs, timeouts, bounded retries, provider fallbacks, trace ids, and recorded token/cost metrics. Safety policy MUST prevent adaptation to harmful local norms, disclose bot identity where required, avoid manipulative impersonation, and minimize retention of sensitive conversation data. Both papers explicitly raise deception/social-engineering risk or leave long-horizon safety unresolved. [HUMA paper digest](../research/paper-huma.md) [LoSoNA paper digest](../research/paper-losona.md)
+## Model operations and safety
+
+Model stages SHOULD use versioned prompts, schema-constrained output, bounded retries, timeouts, provider failover, cost traces, and evidence references. Implementations MUST prevent learned harmful local behavior from overriding safety policy, minimize retained sensitive chat content, and support internal deletion/retention controls even where no public delete route exists. The papers identify social-engineering and long-horizon safety concerns but do not prescribe a unique production policy. [HUMA digest](../research/paper-huma.md) [LoSoNA digest](../research/paper-losona.md)

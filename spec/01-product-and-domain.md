@@ -1,49 +1,42 @@
 ---
 title: Product and Domain Model
-description: Normative product surface, callers, entities, ownership, and lifecycle for a Humalike-compatible service.
-tags:
-  - humalike
-  - specification
-  - domain-model
+description: Normative product surface, resources, ownership, and lifecycle for a Humalike-compatible service.
+tags: [humalike, specification, domain-model]
 status: complete
 ---
 # Product and domain model
 
 ## Product promise
 
-The service makes agents behave more like participants in human social systems. It provides: realistic group-chat turn timing; local conversational style extraction; person-centric memory; pre-send Theory-of-Mind refinement; reception analysis and full audits; and grounded persona population generation, enhancement, and validation. [Documented API surface](../research/docs-api-surface.md)
-
-Primary callers are server-side agent runtimes, chat gateways, evaluation pipelines, dashboards, and batch observability jobs. Browser clients MUST NOT receive API keys. A representative runtime is the [Hermes integration](../research/plugin-analysis.md), which calls turn-taking per message, refreshes a voice card every fifth turn, and uses slow observability jobs off the reply path.
+The service supplies group-chat turn decisions and paced delivery, local social-style extraction, person-centric memory, pre-send Theory-of-Mind refinement, reception analysis and audits, and persona generation, enhancement, and validation. [Documented surface](../research/docs-api-surface.md) A representative server-side caller opens one thread per agent context, refreshes learned style periodically, and consumes WSS message and typing events. [Plugin analysis](../research/plugin-analysis.md)
 
 ## Bounded contexts
 
-- **Identity and credits:** account, API key/session token, authorization policy, credit ledger, usage projection.
-- **Turn-taking:** thread, inbound message, turn epoch, decision, pacing plan, scheduled message, realtime channel, behavioral event/signal.
-- **Social Memory:** owner-partitioned scope or memory bank, append-only transcript, extracted person facts, recall, question answer.
-- **Social Learning:** attributed transcript, norms profile, prompt block/voice card.
-- **Theory of Mind:** context, draft, predicted reception/risk, refined reply.
-- **Social observability:** normalized transcript, interaction, user reception, finding, persisted report, asynchronous audit run.
-- **Personas:** generation/enhancement/evaluation job, blueprint, field distribution/dependency/constraint, persona, gate, scorecard.
-
-[Documented API surface](../research/docs-api-surface.md)
+- **Identity and credits:** principals, bearer keys, authorization, credit ledger, and usage projection. [Realtime evidence](../research/tested-realtime-memory.md)
+- **Turn-taking:** owner-scoped thread, integrations, inbound batch, epoch, decision, schedule, WSS grant, and delivery events. [Realtime evidence](../research/tested-realtime-memory.md)
+- **Social Memory:** owner/scope transcript, first-write idempotency record, subject facts, recall context, and direct answers. [Realtime evidence](../research/tested-realtime-memory.md)
+- **Social Learning and Theory of Mind:** transcript-derived profile/prompt block and modeled reaction/refined reply. [Intelligence evidence](../research/tested-intelligence-personas.md)
+- **Social Observability:** synchronous report, repository projection, prepared/launched audit, and progressively populated audit sections. [Intelligence evidence](../research/tested-intelligence-personas.md)
+- **Personas:** population, enhancement, evaluation, blueprint, persona, diversity, marginal, gate, and scorecard resources. [Intelligence evidence](../research/tested-intelligence-personas.md)
 
 ## Ownership and isolation
 
-Every persisted entity MUST carry an immutable `owner_id` derived from the verified bearer token. Repository reads, thread reopening, Social Memory scope access, reports, audit runs, jobs, and usage MUST be owner-scoped. A missing or other-owner repository id SHOULD look absent rather than reveal existence. Memory scope identifiers are caller-selected and only unique inside an owner partition. [Documented API surface](../research/docs-api-surface.md)
+Every persisted resource MUST be keyed by an immutable owner derived from the verified bearer. Clients never submit an owner id. Thread reopen, memory scope access, audit runs, repositories, reports, and usage MUST apply the owner predicate at the repository boundary. Random repository UUIDs returned HTTP 200 JSON `null` in tested Report, Population, Enhancement, and Evaluation reads; implementations MUST preserve that absence behavior without disclosing another owner’s resource. [Intelligence evidence](../research/tested-intelligence-personas.md)
 
-## Lifecycles
+## Resource lifecycles
 
-A turn-taking thread is created/reopened, receives ordered batches, advances a monotonically increasing epoch, and schedules replies only against the current epoch. Reopening preserves state but rotates the realtime grant. Social Memory is append-only; no public delete/reset route exists, so a caller resets by choosing another scope. Reports are created by analysis and read later. Persona/audit resources are asynchronous state machines (`pending|running|succeeded|failed`, with audit-specific `prepared|queued|completed` vocabulary where documented). [Documented API surface](../research/docs-api-surface.md)
+A thread is created or reopened, receives ordered batches, and increments `turn_epoch` once per accepted batch. Reopen preserves state, updates supplied integrations, preserves omitted integrations, and rotates the short-lived WSS grant. A stale response is superseded atomically and schedules nothing. [Realtime evidence](../research/tested-realtime-memory.md)
+
+Social Memory is append-only through the public surface. Reusing an ingest key MUST replay the first response and preserve the first body, even if a later body differs. No public list, clear, or delete route is documented; callers reset by choosing a new scope. [Realtime evidence](../research/tested-realtime-memory.md) [Documented surface](../research/docs-api-surface.md)
+
+`analyze` returns a complete report synchronously but exposes no report id, `Location`, or `x-report-id`. The public `Report/by-id` read exists, yet a newly analyzed report is not reachable through the tested flow; the recreation MUST reproduce the action response and repository absence behavior while treating linkage as unresolved. [Intelligence evidence](../research/tested-intelligence-personas.md)
+
+Population, enhancement, and evaluation resources use `pending|running|succeeded|failed`. A succeeded evaluation can have `result.passed:false`. Audit preparation and launch are commands; audit projection progress is represented by nullable result sections becoming populated, not by required `status` or `stage` fields. [Intelligence evidence](../research/tested-intelligence-personas.md)
 
 ## Timing classes
 
-- **Fast/free:** whoami, usage projection, open/reopen thread, record event, Social Memory ingest.
-- **Fast/billable:** turn decision, response refinement/scheduling, recall, ask, foresee.
-- **Slow synchronous:** extract and analyze; clients need long timeouts and should batch away from the reply path.
-- **Asynchronous:** personas, enhancement, validation, and full audit.
-
-[Documented API surface](../research/docs-api-surface.md)
+Identity, usage, thread open, events, ingest, and terminal repository polls are free in tested accounting. Model-backed operations consume credits. Observed terminal durations were about 20 seconds for audit, 52 seconds for population, 37 seconds for enhancement, and 3.5 seconds for evaluations; these are observations, not hard SLOs. [Intelligence evidence](../research/tested-intelligence-personas.md)
 
 ## Compatibility principle
 
-Exact HTTP status, field presence, casing, default, owner scoping, idempotency, and epoch behavior are compatibility requirements. Model-generated prose is semantically compatible when grounded and schema-valid; it need not be byte-identical. The [live fixtures](../research/live-api-experiments.md) show that even trivial drafts are rewritten, so deterministic text equality is not a valid general contract.
+The implementation MUST match tested transport and state invariants exactly. Generated prose MUST be schema-valid, grounded in supplied/retrieved evidence, preserve required seed facts, and satisfy semantic assertions; it MUST NOT be compared by exact wording. [Realtime evidence](../research/tested-realtime-memory.md) [Intelligence evidence](../research/tested-intelligence-personas.md)

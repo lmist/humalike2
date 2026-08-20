@@ -45,7 +45,7 @@ Participants labeled the AI manager as AI 55.4% of the time (thus human 44.6%) a
 
 ## Missing implementation detail
 
-The paper does not identify the Router/Action/Reflection model, exact prompts, all 20 strategy definitions, appropriateness output schema, token budgets, persistence backend, concurrency primitives, message-splitting policy, timing distribution, retry policy, or deployment throughput. These are true implementation unknowns, not details to infer. Product parity therefore requires fixture-driven behavior and configurable policies rather than pretending the paper specifies a unique engine. [HUMA source](../sources/papers/arXiv-2511.17315v1/source.md)
+The paper does not identify the Router/Action/Reflection model, exact prompts, all 20 strategy definitions, appropriateness output schema, token budgets, persistence backend, concurrency primitives, message-splitting policy, timing distribution, retry policy, or deployment throughput. These are true implementation unknowns, not details to infer. Product parity therefore requires live-tested behavior and configurable policies rather than pretending the paper specifies a unique engine. [HUMA source](../sources/papers/arXiv-2511.17315v1/source.md)
 
 ## Product relationship
 
