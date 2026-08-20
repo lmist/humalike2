@@ -14,10 +14,15 @@ os.environ["HUMALIKE_SEED_KEYS"] = "ak_pytest_learning"
 from fastapi.testclient import TestClient  # noqa: E402
 
 from humalike.app import app  # noqa: E402
+from humalike.auth import mint_key  # noqa: E402
+from humalike.db import create_all  # noqa: E402
 from humalike.engine.foresee import foresee, subject_names  # noqa: E402
 from humalike.engine.learning import derive_channels, extract  # noqa: E402
 
-AUTH = {"Authorization": "Bearer ak_pytest_learning"}
+# Mint at runtime so the module works regardless of which test file first
+# imported humalike.config (env vars set above only apply on first import).
+create_all()
+AUTH = {"Authorization": f"Bearer {mint_key()}"}
 
 TINY = {
     "transcript": {

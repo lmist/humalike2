@@ -16,6 +16,7 @@ from .scheduler import scheduler
 from .routes import (
     credits,
     foresee,
+    internal,
     observability,
     personas,
     social_learning,
@@ -48,7 +49,7 @@ def create_app() -> FastAPI:
     install_error_handlers(app)
     app.add_middleware(GatewayMiddleware)
     for module in (credits, turn_taking, social_memory, social_learning,
-                   foresee, observability, personas, ws):
+                   foresee, observability, personas, ws, internal):
         app.include_router(module.router)
     return app
 
