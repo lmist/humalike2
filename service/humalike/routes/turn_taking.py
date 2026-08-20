@@ -17,6 +17,7 @@ from ..engine import memory as memory_engine
 from ..engine import router as turn_router
 from ..engine.naturalizer import naturalize
 from ..engine.pacing import deliver_times, resolve_pacing
+from ..engine.refinement import refine
 from ..errors import payment_required, semantic_validation_error
 from ..grants import issue
 from ..ids import new_uuid
@@ -199,7 +200,23 @@ async def respond(request: Request, body: RespondRequest):
                     billing.release(r)
                 return payment_required()
 
-            bubbles = naturalize(body.content)
+            recent = s.query(ThreadMessage).filter(
+                ThreadMessage.thread_id == thread_id
+            ).order_by(ThreadMessage.id.desc()).limit(20).all()
+            transcript = [
+                {"sender": m.sender, "content": m.content} for m in reversed(recent)
+            ]
+            recalled = _recalled_context(owner_id, thread, transcript) if thread.memory_bank_id else ""
+            refinement = refine(
+                body.content, transcript=transcript, recalled_context=recalled,
+                system_prompt=body.system_prompt, agent_name=body.agent_name)
+            s.add(RouterTrace(
+                thread_id=thread_id, owner_id=owner_id, epoch=thread.turn_epoch,
+                decision="respond", scores_json=dumps({
+                    "mental_state": refinement.mental_state,
+                    "rationale": refinement.rationale,
+                }), created_at=utcnow()))
+            bubbles = naturalize(refinement.refined)
             reading_delay_ms, typing_wpm, max_typing_ms = resolve_pacing(
                 body.pacing.model_dump() if body.pacing else None)
 
