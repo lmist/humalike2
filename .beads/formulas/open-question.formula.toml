@@ -1,0 +1,44 @@
+formula = "open-question"
+description = "Resolve one spec/08 open question: bounded probe, classify (configuration | local safety requirement | documented default | unsupported), record."
+version = 1
+type = "workflow"
+
+[vars.question]
+description = "The open question text (or its spec/08 number and title)"
+required = true
+
+[[steps]]
+id = "probe"
+title = "Probe: {{question}}"
+type = "task"
+priority = 2
+labels = ["open-question"]
+description = """
+Decide whether production can answer this with one key and a bounded credit budget. If yes, probe with fresh ids,
+state the budget on this bead first, never log keys or grants. If no (cross-tenant, 402 replenishment, operational policy),
+say so explicitly. Write observations here; do not implement.
+"""
+
+[[steps]]
+id = "classify"
+title = "Classify: {{question}}"
+type = "task"
+priority = 2
+labels = ["open-question"]
+needs = ["probe"]
+description = """
+Per spec/08: an unknown MUST remain one of configuration, local safety requirement, documented default, or explicitly
+unsupported behavior. It MUST NOT be represented as established production behavior. Pick one and justify it on this bead.
+"""
+
+[[steps]]
+id = "record"
+title = "Record outcome: {{question}}"
+type = "task"
+priority = 2
+labels = ["open-question"]
+needs = ["classify"]
+description = """
+Pour `decision` with the classification. If the probe established real production behavior, also pour `spec-change`
+so it enters the spec through assertion → digest → prose. Update the spec/08 open-questions list only via spec-change.
+"""

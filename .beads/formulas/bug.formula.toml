@@ -1,0 +1,39 @@
+formula = "bug"
+description = "Reproduce, fix, and verify a defect."
+version = 1
+type = "workflow"
+
+[vars.summary]
+description = "Short bug summary"
+required = true
+
+[[steps]]
+id = "repro"
+title = "Reproduce {{summary}}"
+type = "bug"
+priority = 1
+description = """
+Write failing observation: command, expected, actual. Prefer a live-suite assertion or a
+deterministic internal test as the repro. If it cannot be reproduced, close the molecule
+with reason and file a spike.
+"""
+
+[[steps]]
+id = "fix"
+title = "Fix {{summary}}"
+type = "bug"
+priority = 1
+needs = ["repro"]
+description = """
+Minimal fix. Link discovered-from beads for adjacent rot. Do not expand scope.
+"""
+
+[[steps]]
+id = "verify"
+title = "Verify fix for {{summary}}"
+type = "task"
+priority = 1
+needs = ["fix"]
+description = """
+Re-run the repro. Add a regression test if one did not already exist.
+"""

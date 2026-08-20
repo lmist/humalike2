@@ -1,0 +1,38 @@
+formula = "spike"
+description = "Timeboxed investigation. Ends with a decision or a no-go."
+version = 1
+type = "workflow"
+
+[vars.question]
+description = "The unknown to reduce"
+required = true
+
+[vars.hours]
+description = "Timebox in hours (documentation only; timer is literal)"
+default = "4"
+
+[[steps]]
+id = "investigate"
+title = "Spike: {{question}}"
+type = "task"
+priority = 2
+description = """
+Timebox is {{hours}}h. Do not start implementation. Write what you learned on this bead.
+If the spike calls production Humalike, state the credit budget first and never log keys.
+"""
+
+[steps.gate]
+type = "timer"
+await_id = "spike-timebox"
+timeout = "4h"
+
+[[steps]]
+id = "decide"
+title = "Decide after spike: {{question}}"
+type = "task"
+priority = 2
+needs = ["investigate"]
+description = """
+Either pour `decision` with the answer, or close with a no-go reason and the next question.
+Do not silently turn the spike into a feature.
+"""

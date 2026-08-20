@@ -1,0 +1,29 @@
+formula = "patrol"
+description = "Ephemeral health loop. Wisp this (bd mol wisp patrol). Do not pour unless you want it in history."
+version = 1
+type = "workflow"
+phase = "vapor"
+
+[vars.focus]
+description = "What to inspect"
+default = "repo"
+
+[[steps]]
+id = "scan"
+title = "Patrol scan: {{focus}}"
+type = "task"
+priority = 3
+description = """
+Run make doctor, bd stale, bd orphans if available. Write findings as discovered-from beads.
+Do not fix in this step.
+"""
+
+[[steps]]
+id = "report"
+title = "Patrol report: {{focus}}"
+type = "task"
+priority = 3
+needs = ["scan"]
+description = """
+Squash or burn the wisp after the report. Promote anything that matters with bd mol bond --pour or a real create.
+"""

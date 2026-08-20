@@ -1,0 +1,140 @@
+formula = "bootstrap-beads"
+description = "Make beads work in this checkout. Idempotent: observe, then apply the matching resolver row."
+version = 1
+type = "workflow"
+
+[vars.prefix]
+description = "Issue prefix for bd init"
+default = "hum"
+
+[[steps]]
+id = "observe"
+title = "Observe checkout state"
+type = "task"
+priority = 1
+labels = ["bootstrap"]
+description = """
+Run ./scripts/bootstrap.sh observe block or docs/RESOLVERS.md section 0 by hand:
+git? vendor/beads? bin/bd? PATH bd == ./bin/bd? .beads/metadata.json? formulas? hooks markers?
+Do not change anything in this step.
+Acceptance: a note on this bead lists yes/no for each fact.
+"""
+
+[[steps]]
+id = "vendor-subtree"
+title = "Ensure vendor/beads subtree"
+type = "chore"
+priority = 1
+labels = ["bootstrap"]
+needs = ["observe"]
+description = """
+Resolver: if vendor/beads/cmd/bd/main.go exists, close this as already done.
+Else run the subtree row in docs/RESOLVERS.md (git subtree add --prefix=vendor/beads beads-upstream v1.2.2 --squash).
+Acceptance: vendor/beads/cmd/bd/main.go exists.
+"""
+
+[[steps]]
+id = "build-binary"
+title = "Ensure repo-local bin/bd"
+type = "chore"
+priority = 1
+labels = ["bootstrap"]
+needs = ["vendor-subtree"]
+description = """
+Resolver: if bin/bd is executable and `bin/bd version` reports 1.2.2, close as done.
+Else `make bd`. Never install bd from Homebrew or ~/.local/bin for this repo.
+Acceptance: `./bin/bd version` reports 1.2.2 built from vendor/beads.
+"""
+
+[[steps]]
+id = "init-database"
+title = "Ensure beads database prefix={{prefix}}"
+type = "chore"
+priority = 1
+labels = ["bootstrap"]
+needs = ["build-binary"]
+description = """
+Resolver: if .beads/metadata.json exists, run `bd bootstrap --yes` and close.
+Else BD_NON_INTERACTIVE=1 ./bin/bd init --non-interactive --role maintainer -p {{prefix}} --skip-agents.
+Never bd init --force on a checkout that already has issues.
+Acceptance: `bd info` shows prefix {{prefix}} and a working embedded Dolt db.
+"""
+
+[[steps]]
+id = "register-types"
+title = "Register project issue types"
+type = "chore"
+priority = 2
+labels = ["bootstrap"]
+needs = ["init-database"]
+description = """
+make types   (scripts/set-types.sh → bd config set types.custom [...])
+Acceptance: `bd types` lists story, spike, milestone, conformance, question beside the built-ins.
+"""
+
+[[steps]]
+id = "install-hooks"
+title = "Install beads hooks plus HUM extras"
+type = "chore"
+priority = 1
+labels = ["bootstrap"]
+needs = ["init-database"]
+description = """
+make hooks
+Acceptance: core.hooksPath points at .beads/hooks; pre-commit contains BEGIN HUM PATH and BEGIN HUM CHECKS markers outside the BEADS INTEGRATION block.
+"""
+
+[[steps]]
+id = "agent-path-hooks"
+title = "Agent hosts put ./bin first on PATH"
+type = "chore"
+priority = 1
+labels = ["bootstrap"]
+needs = ["build-binary"]
+description = """
+Claude Code: .claude/settings.json SessionStart → scripts/agent-env.sh (writes export PATH to $CLAUDE_ENV_FILE).
+Cursor: .cursor/rules/beads.mdc (alwaysApply) + .envrc for direnv shells.
+Codex: AGENTS.md first instruction + .envrc; scripts/bd shim refuses PATH fallback.
+Acceptance: in each host, `command -v bd` resolves to <repo>/bin/bd (or the agent runs ./scripts/bd).
+"""
+
+[[steps]]
+id = "install-formulas"
+title = "Verify pourable formulas parse"
+type = "chore"
+priority = 1
+labels = ["bootstrap"]
+needs = ["init-database"]
+description = """
+./scripts/check-formulas.sh
+Acceptance: every .beads/formulas/*.formula.toml is visible to `bd formula show --json` with a non-zero step count.
+"""
+
+[[steps]]
+id = "write-resolvers"
+title = "Agent docs point at resolver tables"
+type = "task"
+priority = 1
+labels = ["bootstrap"]
+needs = ["init-database"]
+description = """
+Acceptance: AGENTS.md, CLAUDE.md, AGENT_INSTRUCTIONS.md, docs/RESOLVERS.md and .cursor/rules/beads.mdc exist
+and describe observe-then-lookup, not a linear prompt. They name spec/ as the thing being built.
+"""
+
+[[steps]]
+id = "verify"
+title = "Verify beads is usable"
+type = "task"
+priority = 1
+labels = ["bootstrap"]
+needs = ["register-types", "install-hooks", "agent-path-hooks", "install-formulas", "write-resolvers"]
+description = """
+export PATH="$PWD/bin:$PATH"
+command -v bd        # must be <repo>/bin/bd
+bd types
+bd formula list
+bd ready
+make doctor
+Acceptance: an agent can claim ready work without guessing which bd binary to run.
+"""

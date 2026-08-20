@@ -1,0 +1,64 @@
+formula = "release"
+description = "Cut a release candidate: notes, both live suites, tag. Publish is human-gated."
+version = 1
+type = "workflow"
+
+[vars.version]
+description = "Semver without the v prefix"
+required = true
+
+[[steps]]
+id = "notes"
+title = "Release notes for {{version}}"
+type = "task"
+priority = 1
+description = """
+Summarize closed beads since the last tag. Update README/CHANGELOG if those files exist.
+List which spec/08 open questions remain unsupported in this candidate.
+"""
+
+[[steps]]
+id = "conformance"
+title = "Live conformance for {{version}}"
+type = "task"
+priority = 1
+needs = ["notes"]
+description = """
+Pour `conformance` against the candidate (HUMALIKE_API_URL). Both suites must pass with
+zero failures and zero skips; exit code 3 is a budget blocker, not a pass. Red means stop.
+"""
+
+[[steps]]
+id = "verify"
+title = "Internal gates for {{version}}"
+type = "task"
+priority = 1
+needs = ["conformance"]
+description = """
+make doctor plus the internal release gates from spec/08: idempotency + stale-epoch atomicity
+under concurrency, cross-tenant isolation, no secrets in logs or tracked files, docs/clients in sync.
+"""
+
+[[steps]]
+id = "tag"
+title = "Tag v{{version}}"
+type = "chore"
+priority = 1
+needs = ["verify"]
+description = """
+Create the git tag only if the user asked. Do not push tags unprompted.
+"""
+
+[[steps]]
+id = "publish"
+title = "Publish {{version}}"
+type = "task"
+priority = 1
+needs = ["tag"]
+description = """
+Human publishes (GitHub release, announce). Agents do not ship this step alone.
+"""
+
+[steps.gate]
+type = "human"
+timeout = "72h"

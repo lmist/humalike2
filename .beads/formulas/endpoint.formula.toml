@@ -1,0 +1,66 @@
+formula = "endpoint"
+description = "Implement one spec'd HTTP/WSS endpoint to live parity: pin the contract, implement, verify against the suite slice, parity-review."
+version = 1
+type = "workflow"
+
+[vars.method]
+description = "HTTP method or WSS"
+required = true
+
+[vars.path]
+description = "Route path, e.g. /v1/threads/{id}/events"
+required = true
+
+[vars.section]
+description = "spec/ document that defines it, e.g. spec/03-api-realtime-memory.md"
+required = true
+
+[[steps]]
+id = "contract"
+title = "Contract: {{method}} {{path}}"
+type = "task"
+priority = 1
+labels = ["endpoint"]
+description = """
+From {{section}} and the tested research digest, pin onto this bead's acceptance: exact status codes, response envelope,
+field keys and nullability, error literals and `loc` prefixing, headers (x-request-id present, rate headers absent),
+billing component and credit delta, idempotency/epoch rules, and which tests/realtime or tests/intelligence assertions cover it.
+Mark documented-but-untested shapes (402/403/502 bodies, failed-job error) as documented defaults, not contract.
+"""
+
+[[steps]]
+id = "implement"
+title = "Implement {{method}} {{path}}"
+type = "feature"
+priority = 1
+labels = ["endpoint"]
+needs = ["contract"]
+description = """
+Claim before coding. Route, validation, route-specific error serializer, persistence, billing capture, tests.
+Deterministic model substitutes are fine until the phase that makes them model-backed.
+Do not add fields production does not return; do not 'improve' behavior the suite pins (e.g. fields:{}, no report id).
+"""
+
+[[steps]]
+id = "verify"
+title = "Verify {{method}} {{path}} against the live suite"
+type = "task"
+priority = 1
+labels = ["endpoint"]
+needs = ["implement"]
+description = """
+HUMALIKE_API_URL=<recreation> run the covering suite (tests/realtime/run.sh or tests/intelligence/run.sh) and the internal tests.
+Record pass/fail/skip counts and exit code on this bead. Exit 3 = budget blocker. Red means stop and fix, not close.
+"""
+
+[[steps]]
+id = "parity"
+title = "Parity review: {{method}} {{path}}"
+type = "task"
+priority = 2
+labels = ["endpoint"]
+needs = ["verify"]
+description = """
+Compare observed recreation behavior with the tested digest once more. If production disagrees with the spec, pour `spec-change`
+(assertion → digest → prose) instead of editing spec/ directly. Close with evidence: suite run, commit sha.
+"""

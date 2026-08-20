@@ -1,0 +1,63 @@
+formula = "feature"
+description = "Design, implement, test, and land a new capability."
+version = 1
+type = "workflow"
+
+[vars.name]
+description = "Feature name"
+required = true
+
+[[steps]]
+id = "design"
+title = "Design {{name}}"
+type = "feature"
+priority = 2
+description = """
+Write scope, approach, and acceptance on this bead (design + acceptance fields).
+Cite the spec/ section(s) this satisfies and any decision beads this depends on.
+"""
+
+[[steps]]
+id = "implement"
+title = "Implement {{name}}"
+type = "feature"
+priority = 2
+needs = ["design"]
+description = """
+Claim this bead before touching code. Create tests. File discovered-from beads for surprises.
+Do not invent fields or behavior the spec does not pin; untested shapes stay documented defaults.
+"""
+
+[[steps]]
+id = "test"
+title = "Verify {{name}}"
+type = "task"
+priority = 2
+needs = ["implement"]
+description = """
+Run the relevant tests and any make doctor checks. Do not proceed on red.
+"""
+
+[[steps]]
+id = "review"
+title = "Review {{name}}"
+type = "task"
+priority = 2
+needs = ["test"]
+description = """
+Open or request review. This step is gated on a human.
+"""
+
+[steps.gate]
+type = "human"
+timeout = "72h"
+
+[[steps]]
+id = "land"
+title = "Land {{name}}"
+type = "task"
+priority = 2
+needs = ["review"]
+description = """
+Merge only if the user asked. Close this bead with the landing evidence (sha, PR).
+"""

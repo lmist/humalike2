@@ -1,0 +1,27 @@
+formula = "chore"
+description = "Maintenance: deps, tooling, hygiene. No user-facing behavior change."
+version = 1
+type = "workflow"
+
+[vars.name]
+description = "What is being maintained"
+required = true
+
+[[steps]]
+id = "do"
+title = "Chore: {{name}}"
+type = "chore"
+priority = 3
+description = """
+Do the maintenance. Do not sneak a feature in. If you discover a bug, file it discovered-from this bead.
+"""
+
+[[steps]]
+id = "check"
+title = "Check chore {{name}}"
+type = "task"
+priority = 3
+needs = ["do"]
+description = """
+make doctor if you touched formulas/hooks. Otherwise run the smallest relevant check.
+"""

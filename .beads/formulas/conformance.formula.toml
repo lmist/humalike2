@@ -1,0 +1,62 @@
+formula = "conformance"
+description = "Run the committed live suites against a target and report by the spec/08 rules (0 green, 1 failures, 3 credit-depleted)."
+version = 1
+type = "workflow"
+
+[vars.target]
+description = "HUMALIKE_API_URL to test (omit/empty = production; be careful, production costs credits)"
+default = "http://localhost:8080"
+
+[vars.reason]
+description = "Why this run exists (phase exit, release candidate, regression check)"
+default = "regression check"
+
+[[steps]]
+id = "budget"
+title = "Budget and key check for conformance ({{reason}})"
+type = "task"
+priority = 1
+labels = ["conformance"]
+description = """
+Target: {{target}}. Confirm HUMALIKE_API_KEY is available via env or ./.env (never tracked, never printed).
+If the target is production, a realtime run costs ~52 credits and an intelligence run ~800-880; state the approved budget on
+this bead before proceeding and do not run both concurrently (shared theoryofmind bucket). Local targets cost nothing.
+Node 24 (global fetch) is required; tests/realtime needs `npm ci` once.
+"""
+
+[[steps]]
+id = "realtime"
+title = "Run tests/realtime against {{target}}"
+type = "task"
+priority = 1
+labels = ["conformance"]
+needs = ["budget"]
+description = """
+HUMALIKE_API_URL={{target}} ./tests/realtime/run.sh
+Record exit code and pass/fail/skip counts (83 live assertions) on this bead. Exit 3 = credit-depleted → mark blocked, not failed.
+"""
+
+[[steps]]
+id = "intelligence"
+title = "Run tests/intelligence against {{target}}"
+type = "task"
+priority = 1
+labels = ["conformance"]
+needs = ["realtime"]
+description = """
+HUMALIKE_API_URL={{target}} ./tests/intelligence/run.sh   (8-12 minutes; ~1,280-1,360 assertions)
+Sequential after realtime for clean billing attribution. Record exit code and counts on this bead.
+"""
+
+[[steps]]
+id = "report"
+title = "Conformance report: {{reason}}"
+type = "task"
+priority = 1
+labels = ["conformance"]
+needs = ["intelligence"]
+description = """
+Summarize both runs. Every failed assertion becomes a `bug` bead discovered-from this one (cite the assertion name).
+Exit 3 anywhere → the report says 'budget blocker', never 'regression'. Green = zero failures AND zero skips.
+Attach the summary as notes; do not paste keys, grants, or account identities.
+"""

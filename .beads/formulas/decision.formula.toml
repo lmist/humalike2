@@ -1,0 +1,42 @@
+formula = "decision"
+description = "Record an architecture decision other work can cite."
+version = 1
+type = "workflow"
+
+[vars.title]
+description = "Decision title"
+required = true
+
+[[steps]]
+id = "context"
+title = "Context for {{title}}"
+type = "task"
+priority = 2
+description = """
+What forces this decision? What options exist? Which spec/ clauses constrain it? Write them on this bead.
+"""
+
+[[steps]]
+id = "record"
+title = "Record decision: {{title}}"
+type = "task"
+priority = 2
+needs = ["context"]
+description = """
+Use issue type decision. State the choice, the rejected options, and the consequence.
+Other beads should `bd dep add <work> <this-decision>` when they rely on it.
+"""
+
+[[steps]]
+id = "confirm"
+title = "Confirm decision {{title}}"
+type = "task"
+priority = 2
+needs = ["record"]
+description = """
+Human confirms the ADR stands.
+"""
+
+[steps.gate]
+type = "human"
+timeout = "168h"

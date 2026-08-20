@@ -1,0 +1,41 @@
+formula = "story"
+description = "A user-visible slice: intent, build, check."
+version = 1
+type = "workflow"
+
+[vars.who]
+description = "Who the story is for"
+required = true
+
+[vars.want]
+description = "What they want"
+required = true
+
+[[steps]]
+id = "frame"
+title = "Frame story: {{who}} wants {{want}}"
+type = "task"
+priority = 2
+description = """
+Acceptance lives on this bead. Keep the slice small enough to land in one sitting.
+"""
+
+[[steps]]
+id = "build"
+title = "Build: {{want}}"
+type = "feature"
+priority = 2
+needs = ["frame"]
+description = """
+Implement only what the framed acceptance requires.
+"""
+
+[[steps]]
+id = "check"
+title = "Check: {{who}} can {{want}}"
+type = "task"
+priority = 2
+needs = ["build"]
+description = """
+Walk the acceptance. File leftover polish as chores, not silent scope.
+"""

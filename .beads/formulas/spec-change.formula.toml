@@ -1,0 +1,59 @@
+formula = "spec-change"
+description = "spec/08 discipline for a new production discovery: fresh live assertion → tested research digest → normative prose. Never prose first."
+version = 1
+type = "workflow"
+
+[vars.finding]
+description = "One-line statement of the observed production behavior"
+required = true
+
+[[steps]]
+id = "assert"
+title = "Live assertion: {{finding}}"
+type = "task"
+priority = 1
+labels = ["spec-change"]
+description = """
+Add a fresh assertion to tests/realtime/run.mjs or tests/intelligence/run.mjs that pins {{finding}} with fresh ids and
+semantic (not paraphrase) checks. Run it against production within an explicit credit budget and record the result here.
+The assertion is the evidence; no digest or spec edit until it is green against production.
+"""
+
+[[steps]]
+id = "digest"
+title = "Digest update: {{finding}}"
+type = "task"
+priority = 1
+labels = ["spec-change"]
+needs = ["assert"]
+description = """
+Update the tested research digest (research/tested-realtime-memory.md or research/tested-intelligence-personas.md) through the
+OpenKnowledge MCP edit tool, citing the runner file. Keep counts approximate ('cite the assertion set, not a fixed count').
+"""
+
+[[steps]]
+id = "normalize"
+title = "Normative prose: {{finding}}"
+type = "task"
+priority = 1
+labels = ["spec-change"]
+needs = ["digest"]
+description = """
+Only now edit the normative spec/ section(s) via OpenKnowledge. If live behavior contradicts documentation, documentation
+becomes non-normative for that field. Add the item to spec/08 'Corrected contradictions' when it overturns an assumption.
+"""
+
+[[steps]]
+id = "review"
+title = "Human review of spec change: {{finding}}"
+type = "task"
+priority = 1
+labels = ["spec-change"]
+needs = ["normalize"]
+description = """
+Human confirms assertion, digest, and prose agree. Then close with the commit sha.
+"""
+
+[steps.gate]
+type = "human"
+timeout = "72h"

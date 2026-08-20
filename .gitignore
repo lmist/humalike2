@@ -6,3 +6,20 @@ node_modules/
 .github/skills/open-knowledge/
 .opencode/skills/open-knowledge/
 .pi/skills/open-knowledge/
+
+# Repo-local beads binary (rebuild with `make bd`); ~190MB, platform-specific
+/bin/bd
+/bin/bd.exe
+
+# Beads / Dolt runtime files
+.dolt/
+.beads-credential-key
+.beads/proxieddb/
+.beads.gate.lock
+*.gate.lock
+
+# OS
+.DS_Store
+
+# Beads / Dolt files (added by bd init)
+*.db

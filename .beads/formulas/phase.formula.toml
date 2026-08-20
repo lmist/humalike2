@@ -1,0 +1,67 @@
+formula = "phase"
+description = "One spec/07 delivery phase: scope it into children, build, pass live conformance, human confirms the exit criterion."
+version = 1
+type = "workflow"
+
+[vars.number]
+description = "Phase number from spec/07-implementation-plan.md (0-8)"
+required = true
+
+[vars.name]
+description = "Phase name as written in spec/07"
+required = true
+
+[[steps]]
+id = "scope"
+title = "Scope phase {{number}}: {{name}}"
+type = "task"
+priority = 1
+labels = ["phase"]
+description = """
+Read spec/07 'Phase {{number}}' and every spec/ section it links (use the OpenKnowledge exec tool, not native reads).
+Enumerate the MUST/SHOULD invariants and endpoints the phase covers and the live-suite assertions that prove them.
+For each unit of work pour `endpoint` or `feature` (or `bug`/`chore`) and make its root depend on this phase's
+`build` step: bd dep add <child-root> <build-id>. Do not write implementation here.
+Acceptance: the build step's blockers list covers every invariant in the phase text; nothing is tracked outside beads.
+"""
+
+[[steps]]
+id = "build"
+title = "Build phase {{number}}: {{name}}"
+type = "epic"
+priority = 1
+labels = ["phase"]
+needs = ["scope"]
+description = """
+Umbrella for the poured children. Close only when every child molecule is closed.
+Do not put implementation work on this bead itself.
+"""
+
+[[steps]]
+id = "conformance"
+title = "Live conformance for phase {{number}}"
+type = "task"
+priority = 1
+labels = ["phase"]
+needs = ["build"]
+description = """
+Pour `conformance` with target = the recreation's HUMALIKE_API_URL. The phase's exit text in spec/07 says which
+assertions must be green; earlier phases may legitimately leave later-phase blocks red — record which ones.
+Exit code 3 (402 credit depletion) is an environment blocker, never a product regression.
+"""
+
+[[steps]]
+id = "exit"
+title = "Exit criterion met for phase {{number}}"
+type = "task"
+priority = 1
+labels = ["phase"]
+needs = ["conformance"]
+description = """
+Human confirms the spec/07 exit criterion for phase {{number}} ('Exit when ...') against the conformance report,
+plus the delivery discipline list: migrations, typed clients, examples, tests, dashboards, rollback, unresolved-behavior list.
+"""
+
+[steps.gate]
+type = "human"
+timeout = "168h"
