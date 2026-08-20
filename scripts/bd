@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Exec the repo-local beads binary. Never fall through to Homebrew/PATH bd.
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BIN="$ROOT/bin/bd"
+if [[ ! -x "$BIN" ]]; then
+  echo "human: $BIN missing — run: make bd" >&2
+  exit 127
+fi
+exec "$BIN" "$@"

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "matcher": "Shell",
+        "command": "scripts/agent-path-rewrite.sh cursor",
+        "timeout": 10
+      }
+    ]
+  }
+}

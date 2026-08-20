@@ -10,3 +10,13 @@
 #   drafts/        # exclude a directory
 #   *.draft.md     # exclude files matching a pattern
 #   !keep.md       # re-include a file .gitignore excluded
+
+# Beads tooling — operational files, not knowledge. Agents read these with
+# native tools; OK governs spec/, research/, sources/.
+vendor/
+bin/
+.beads/
+AGENTS.md
+AGENT_INSTRUCTIONS.md
+CLAUDE.md
+docs/RESOLVERS.md

@@ -1,0 +1,14 @@
+---
+description: Beads (bd) is the work tracker in this repo; always use the vendored ./bin/bd build.
+globs:
+alwaysApply: true
+---
+
+# Beads in this repo
+
+- Work is tracked in **bd (beads)**, vendored at `vendor/beads` and built to `./bin/bd` (v1.2.2). Never use a Homebrew or `~/.local/bin` `bd`.
+- Before any `bd` command in a terminal, run once: `export PATH="$PWD/bin:$PATH"` (or call `./scripts/bd <cmd>`, which refuses to fall through to PATH). If `./bin/bd` is missing: `make bd`.
+- Session start: `bd prime` then `bd ready`. Claim before coding: `bd update <id> --claim`. Never claim `gate` or `molecule` types.
+- What to create for which kind of work, how to pour formulas (`phase`, `endpoint`, `conformance`, `spec-change`, `open-question`, `feature`, `bug`, …), and how to close a session: read `AGENT_INSTRUCTIONS.md` and `docs/RESOLVERS.md`.
+- The thing being built is `spec/` (Humalike API recreation). `spec/`, `research/`, `sources/` are OpenKnowledge-governed markdown — read/edit them through the `open-knowledge` MCP tools, not native file tools.
+- Commits: the pre-commit hook requires an in-progress bead (or `BD_ISSUE=<id>`, or `HUM_SKIP_CLAIM=1` for docs-only). Do not `git push` unless asked.
