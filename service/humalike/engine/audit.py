@@ -70,9 +70,6 @@ def _risk(text: str) -> str:
 
 def build_read(messages: list[dict], agent_name: str) -> dict:
     humans = [name for name in participants(messages) if name != agent_name]
-    agent_messages = [
-        message["text"] for message in messages if message["speaker"] == agent_name
-    ]
     return {
         "prompt_block": (
             f"Respond as {agent_name}; acknowledge unresolved issues and avoid repetition."
