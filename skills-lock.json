@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "autoresearch": {
+      "source": "factory-ai/factory-plugins",
+      "sourceType": "github",
+      "skillPath": "plugins/autoresearch/skills/autoresearch/SKILL.md",
+      "computedHash": "0e37474300950d0d068734ab8f878cf43d98eaae5e171b4e6bafc32952e142cb"
+    }
+  }
+}
