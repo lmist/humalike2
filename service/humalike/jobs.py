@@ -15,6 +15,7 @@ from typing import Awaitable, Callable
 
 from sqlalchemy import select
 
+from . import metrics
 from .db import session
 from .storage import Job, dumps
 from .timefmt import utcnow
@@ -72,11 +73,16 @@ async def worker_loop(poll_seconds: float = 0.2) -> None:
         if handler is None:
             await asyncio.sleep(poll_seconds)
             continue
+        started = utcnow()
         try:
             await handler(job.id)
+            metrics.record_job(job.kind, "succeeded",
+                               (utcnow() - started).total_seconds() * 1000.0)
         except Exception:
             traceback.print_exc()
             fail_job(job.id)
+            metrics.record_job(job.kind, "failed",
+                               (utcnow() - started).total_seconds() * 1000.0)
 
 
 def start_workers(count: int = 2) -> list[asyncio.Task]:

@@ -10,7 +10,7 @@ from collections import defaultdict
 
 from fastapi import APIRouter, Request
 
-from .. import billing
+from .. import billing, metrics
 from ..config import settings
 from ..db import session
 from ..engine import memory as memory_engine
@@ -28,7 +28,7 @@ from ..schemas.realtime import (
     RespondRequest,
     SubmitRequest,
 )
-from ..storage import RouterTrace, Schedule, Thread, ThreadMessage, dumps
+from ..storage import Outbox, RouterTrace, Schedule, Thread, ThreadMessage, dumps
 from ..timefmt import ts, utcnow
 
 router = APIRouter()
@@ -130,6 +130,7 @@ async def submit_messages(request: Request, body: SubmitRequest):
             new_epoch = thread.turn_epoch + 1
             thread.turn_epoch = new_epoch
             thread.updated_at = now
+            metrics.record_epoch_advance()
             for m in messages:
                 s.add(ThreadMessage(
                     thread_id=thread_id, owner_id=owner_id, epoch=new_epoch,
@@ -189,6 +190,7 @@ async def respond(request: Request, body: RespondRequest):
                 return semantic_validation_error("unknown thread")
             # Epoch check precedes model work and billing (spec/05).
             if body.turn_epoch != thread.turn_epoch:
+                metrics.record_epoch_supersession()
                 return {"scheduled": [], "superseded": True}
 
             reservations = []
@@ -207,9 +209,11 @@ async def respond(request: Request, body: RespondRequest):
                 {"sender": m.sender, "content": m.content} for m in reversed(recent)
             ]
             recalled = _recalled_context(owner_id, thread, transcript) if thread.memory_bank_id else ""
+            from .social_learning import latest_prompt_block
             refinement = refine(
                 body.content, transcript=transcript, recalled_context=recalled,
-                system_prompt=body.system_prompt, agent_name=body.agent_name)
+                system_prompt=body.system_prompt, agent_name=body.agent_name,
+                learned_prompt_block=latest_prompt_block(owner_id))
             s.add(RouterTrace(
                 thread_id=thread_id, owner_id=owner_id, epoch=thread.turn_epoch,
                 decision="respond", scores_json=dumps({
@@ -253,9 +257,29 @@ async def respond(request: Request, body: RespondRequest):
                 "created_at": ts(created_stamps[e["position"]]),
                 "updated_at": ts(created_stamps[e["position"]]),
             } for e in entries]
+            outbox_row = None
+            if entries:
+                # Outbox committed in the same transaction as the schedules so
+                # delivery publication cannot be lost between DB commit and
+                # scheduler arming (spec/06 §Command transaction).
+                outbox_row = Outbox(
+                    kind="deliver_reply",
+                    payload_json=dumps({
+                        "reply_group": reply_group,
+                        "thread_id": thread_id,
+                        "channel": _channel(thread_id),
+                    }),
+                    created_at=utcnow())
+                s.add(outbox_row)
+                s.flush()
+                outbox_id = outbox_row.id
 
         for r in reservations:
             billing.capture(r)
         if entries:
             scheduler.schedule_group(_channel(thread_id), thread_id, entries)
+            with session() as s2:
+                row = s2.get(Outbox, outbox_id)
+                if row is not None:
+                    row.processed_at = utcnow()
     return {"scheduled": scheduled, "superseded": False}

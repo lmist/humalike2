@@ -24,7 +24,8 @@ _NAME_PATTERNS = (
     re.compile(r"address(?:es|ed)? ([A-Z][\w'-]*(?: [A-Z][\w'-]*)*)"),
 )
 
-_ACK_RE = re.compile(r"^(ok(ay)?|thanks?|thank you|lol|nice|cool|got it|sure|yep|yes|no|k)[.! ]*$", re.IGNORECASE)
+_ACK_WORD = r"(?:ok(?:ay)?|thanks?|thank you|lol|nice|cool|got it|sure|yep|yes|no|k)"
+_ACK_RE = re.compile(rf"^(?:{_ACK_WORD}[.,! ]*){{1,3}}$", re.IGNORECASE)
 
 
 def agent_names(system_prompt: str | None, agent_name: str | None = None) -> list[str]:

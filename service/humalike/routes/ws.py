@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
+from .. import metrics
 from ..fanout import registry
 from ..grants import validate
 from ..timefmt import ts_offset, utcnow
@@ -25,9 +26,11 @@ async def turn_taking_thread(websocket: WebSocket) -> None:
     payload = validate(token)
     if payload is None:
         await websocket.close(code=4000, reason="")
+        metrics.record_ws_close(4000)
         return
     channel = payload["c"]
     await registry.register(channel, websocket)
+    metrics.record_ws_connection()
     try:
         await websocket.send_json({
             "type": "attached",
@@ -43,3 +46,4 @@ async def turn_taking_thread(websocket: WebSocket) -> None:
         pass
     finally:
         await registry.unregister(channel, websocket)
+        metrics.record_ws_close(1000)

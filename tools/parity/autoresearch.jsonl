@@ -1,0 +1,2 @@
+{"type":"config","name":"humalike-api-parity","metricName":"total_failed","metricUnit":"count","bestDirection":"lower"}
+{"run":1,"commit":"7ccd1a9","metric":0.0,"status":"keep","description":"baseline: RC1 candidate, both suites green from cold boot","timestamp":1787255778022,"segment":0,"confidence":null,"asi":{"hypothesis":"baseline measurement of the release candidate","next_action_hint":"loop guards against parity regressions; any service change re-runs this benchmark"},"metrics":{"total_passed":1199,"total_skipped":0,"realtime_passed":83,"intelligence_passed":1116}}

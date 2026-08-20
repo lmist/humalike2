@@ -1,0 +1,182 @@
+{
+  "candidate_model": "deterministic-substitute (det-1; ADR hum-vdio)",
+  "generated_at": "2026-08-20T19:57:10.596813+00:00",
+  "samples_per_condition": 3,
+  "scenarios": [
+    {
+      "scenario": "direct_address",
+      "expected": "speak",
+      "naive_decisions": [
+        "speak",
+        "speak",
+        "speak"
+      ],
+      "informed_decisions": [
+        "speak",
+        "speak",
+        "speak"
+      ],
+      "naive_accuracy": 1.0,
+      "informed_accuracy": 1.0,
+      "naive_ci95": [
+        0.43849391955098227,
+        1.0
+      ],
+      "informed_ci95": [
+        0.43849391955098227,
+        1.0
+      ],
+      "consistency_naive": true,
+      "consistency_informed": true,
+      "recovered": 0,
+      "regressed": 0
+    },
+    {
+      "scenario": "third_party_vocative",
+      "expected": "stay_silent",
+      "naive_decisions": [
+        "speak",
+        "speak",
+        "speak"
+      ],
+      "informed_decisions": [
+        "stay_silent",
+        "stay_silent",
+        "stay_silent"
+      ],
+      "naive_accuracy": 0.0,
+      "informed_accuracy": 1.0,
+      "naive_ci95": [
+        0.0,
+        0.5615060804490177
+      ],
+      "informed_ci95": [
+        0.43849391955098227,
+        1.0
+      ],
+      "consistency_naive": true,
+      "consistency_informed": true,
+      "recovered": 3,
+      "regressed": 0
+    },
+    {
+      "scenario": "acknowledgment",
+      "expected": "stay_silent",
+      "naive_decisions": [
+        "speak",
+        "speak",
+        "speak"
+      ],
+      "informed_decisions": [
+        "stay_silent",
+        "stay_silent",
+        "stay_silent"
+      ],
+      "naive_accuracy": 0.0,
+      "informed_accuracy": 1.0,
+      "naive_ci95": [
+        0.0,
+        0.5615060804490177
+      ],
+      "informed_ci95": [
+        0.43849391955098227,
+        1.0
+      ],
+      "consistency_naive": true,
+      "consistency_informed": true,
+      "recovered": 3,
+      "regressed": 0
+    },
+    {
+      "scenario": "at_mention_other",
+      "expected": "stay_silent",
+      "naive_decisions": [
+        "speak",
+        "speak",
+        "speak"
+      ],
+      "informed_decisions": [
+        "stay_silent",
+        "stay_silent",
+        "stay_silent"
+      ],
+      "naive_accuracy": 0.0,
+      "informed_accuracy": 1.0,
+      "naive_ci95": [
+        0.0,
+        0.5615060804490177
+      ],
+      "informed_ci95": [
+        0.43849391955098227,
+        1.0
+      ],
+      "consistency_naive": true,
+      "consistency_informed": true,
+      "recovered": 3,
+      "regressed": 0
+    },
+    {
+      "scenario": "open_question",
+      "expected": "speak",
+      "naive_decisions": [
+        "speak",
+        "speak",
+        "speak"
+      ],
+      "informed_decisions": [
+        "speak",
+        "speak",
+        "speak"
+      ],
+      "naive_accuracy": 1.0,
+      "informed_accuracy": 1.0,
+      "naive_ci95": [
+        0.43849391955098227,
+        1.0
+      ],
+      "informed_ci95": [
+        0.43849391955098227,
+        1.0
+      ],
+      "consistency_naive": true,
+      "consistency_informed": true,
+      "recovered": 0,
+      "regressed": 0
+    },
+    {
+      "scenario": "private_aside",
+      "expected": "stay_silent",
+      "naive_decisions": [
+        "speak",
+        "speak",
+        "speak"
+      ],
+      "informed_decisions": [
+        "stay_silent",
+        "stay_silent",
+        "stay_silent"
+      ],
+      "naive_accuracy": 0.0,
+      "informed_accuracy": 1.0,
+      "naive_ci95": [
+        0.0,
+        0.5615060804490177
+      ],
+      "informed_ci95": [
+        0.43849391955098227,
+        1.0
+      ],
+      "consistency_naive": true,
+      "consistency_informed": true,
+      "recovered": 3,
+      "regressed": 0
+    }
+  ],
+  "aggregate": {
+    "naive_accuracy": 0.3333333333333333,
+    "norm_informed_accuracy": 1.0,
+    "paired_recoveries": 12,
+    "paired_regressions": 0,
+    "verdict": "norm-informed prompting improves this candidate"
+  }
+}

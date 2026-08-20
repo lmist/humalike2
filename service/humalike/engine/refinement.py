@@ -27,6 +27,7 @@ def refine(
     recalled_context: str = "",
     system_prompt: str | None = None,
     agent_name: str | None = None,
+    learned_prompt_block: str = "",
 ) -> Refinement:
     """Model recipients and refine the draft, preserving every draft fact."""
     speakers: list[str] = []
@@ -48,4 +49,9 @@ def refine(
         "facts and intent grounded; pacing and splitting are applied by the "
         "naturalizer."
     )
+    if learned_prompt_block:
+        # Bounded-window learned style is advisory context (spec/05: learned
+        # norms are confidence-weighted evidence, never unconditional
+        # commands), consumed by the stage without altering public fields.
+        rationale += " Learned social profile injected as advisory context."
     return Refinement(refined=draft, mental_state=mental_state, rationale=rationale)

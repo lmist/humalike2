@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from .. import billing
+from .. import billing, metrics
 from ..db import session
 from ..engine import memory as memory_engine
 from ..errors import payment_required
@@ -30,6 +30,7 @@ async def ingest(request: Request, body: IngestRequest):
                 # Owner-wide first-write-wins: identical, changed-body, and
                 # different-scope replays all return the first response and
                 # store nothing (spec/02 §Idempotency and concurrency).
+                metrics.record_idempotency_replay("social-memory/ingest")
                 return loads(record.response_json)
     count = memory_engine.ingest(
         owner_id, body.scope_id,
@@ -53,6 +54,7 @@ async def recall(request: Request, body: RecallRequest):
         return payment_required()
     context = memory_engine.recall(
         owner_id, body.scope_id, body.message.speaker, body.message.text)
+    metrics.record_memory_recall(scope_hit=bool(context))
     return {"context": context}
 
 
