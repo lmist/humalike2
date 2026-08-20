@@ -24,9 +24,9 @@ Use an outbox in the same database transaction as schedules and job state so del
 
 ## Turn-taking and WSS
 
-`open_thread` is a database transaction plus signed short-lived grant issuance. `submit_messages` serializes by thread, appends one batch, advances one epoch, updates integrated memory, and either short-circuits or runs the router. `respond` checks epoch, performs refinement/splitting, persists all bubbles, and commits delivery events before returning. [Realtime API](./03-api-realtime-memory.md)
+`open_thread` is a database transaction plus issuance of a 30-second HMAC-signed `token` grant (base64url payload and signature) scoped to one owner and channel. `submit_messages` serializes by thread, appends one batch, advances one epoch, updates integrated memory, and either short-circuits or runs the router. `respond` checks epoch, performs refinement/splitting, persists all bubbles, and commits delivery events before returning. [Realtime API](./03-api-realtime-memory.md)
 
-A scheduler publishes due events on a stream ordered by thread. The WSS gateway first emits the distinct attached frame, then typing/message events. It generates delivery message ids independently from schedule ids and copies metadata to every bubble. An established connection does not depend on continued grant validity; late expired grants close with code 4000, and reopening creates a new grant. [Realtime evidence](../research/tested-realtime-memory.md)
+A scheduler publishes due events on a stream ordered by thread. The WSS gateway first emits the distinct attached frame, then typing/message events. It generates delivery message ids independently from schedule ids and copies metadata to every bubble. An established connection does not depend on continued grant validity; late expired or invalid grants complete the upgrade and then close with code 4000, multiple sockets on one channel receive identical frames and ids, and reopening creates a new grant. [Realtime evidence](../research/tested-realtime-memory.md)
 
 ## Asynchronous resources
 

@@ -8,7 +8,7 @@ status: complete
 
 ## Status
 
-The initial conservative production probe established authentication, request ids, request-validation casing, basic thread/memory behavior, and server-side response rewriting. The later realtime and intelligence campaigns supersede it as the authoritative evidence because they exercise fresh live state through 652 assertions. [Realtime evidence](./tested-realtime-memory.md) [Intelligence evidence](./tested-intelligence-personas.md)
+The initial conservative production probe established authentication, request ids, request-validation casing, basic thread/memory behavior, and server-side response rewriting. The later realtime and intelligence campaigns supersede it as the authoritative evidence because they exercise fresh live state through roughly 1,360 assertions. [Realtime evidence](./tested-realtime-memory.md) [Intelligence evidence](./tested-intelligence-personas.md)
 
 No recorded response artifact is normative or required for validation. The committed suites call production directly, generate unique ids, and assert schemas and invariants. [Live conformance strategy](../spec/08-parity-and-open-questions.md)
 

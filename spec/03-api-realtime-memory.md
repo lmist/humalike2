@@ -12,7 +12,7 @@ All routes require bearer authentication and follow the [protocol contract](./02
 
 ### `POST /v1/turn-taking/actions/whoami`
 
-Body `{}`. Success is exactly `{user_id:string}`. [Realtime evidence](../research/tested-realtime-memory.md)
+Body `{}`. Success is exactly `{user_id:string}` with a non-empty id. [Realtime evidence](../research/tested-realtime-memory.md)
 
 ### `POST /v1/credits/projections/usage-summary`
 
@@ -24,7 +24,7 @@ type UsageSummary={
 };
 ```
 
-All counts are nonnegative integers and `daily_series` has exactly seven entries. [Realtime evidence](../research/tested-realtime-memory.md)
+All counts are nonnegative integers and `daily_series` has exactly seven entries, oldest first, covering the last seven UTC days with zero-filled days. The component slugs are exactly `personas`, `social-learning`, `social-memory`, `social-observability`, `theoryofmind`, and `turn-taking`; the conformance suites key their billing assertions on these names. [Realtime evidence](../research/tested-realtime-memory.md) [Documented surface](../research/docs-api-surface.md)
 
 ## Thread creation and integrations
 
@@ -45,7 +45,9 @@ type OpenThreadResponse={
 };
 ```
 
-The response keys are exact. `channel` MUST equal `turn-taking-thread/{thread.id}`. Omitted id creates a UUID. Reopening preserves the id, updates `updated_at`, and rotates the grant. Supplying a new memory bank changes it; subsequently omitting integrations preserves the selected bank. Invalid UUID returns the request-validation shape at `loc:["thread_id"]`. [Realtime evidence](../research/tested-realtime-memory.md)
+The response keys are exact. `channel` MUST equal `turn-taking-thread/{thread.id}`. Omitted id creates a UUID; a caller-supplied unused UUID creates a thread with that id. Reopening preserves the id, strictly increases `updated_at`, and rotates the grant with a strictly later `expires_at`. Supplying a new memory bank changes it; subsequently omitting integrations preserves the selected bank. Invalid UUID returns the request-validation shape at `loc:["thread_id"]`, type `uuid_parsing`. Unknown fields are ignored. [Realtime evidence](../research/tested-realtime-memory.md)
+
+`realtime.connect_url` MUST be `wss://<origin-host>/v1/ws/turn-taking-thread?token=<payload>.<signature>`: exactly one query parameter named `token`, whose value is two base64url segments (a 43-character HMAC-SHA256-sized signature). `expires_at` MUST be 30.0 seconds after issuance; the suites accept 25–35 s. [Realtime evidence](../research/tested-realtime-memory.md)
 
 ## Decisions and events
 
@@ -63,9 +65,9 @@ type SubmitResponse={
 };
 ```
 
-`messages` accepts 1–20 entries; sender is at most 255 characters and content at most 4000. Every accepted batch advances the epoch once. `skip_decide:true` or `has_media:true` short-circuits to `speak`. The captured silence response was exactly `{decision:"stay_silent",turn_epoch,tags:[],recalled_context:""}`. Integrated memory returns context from the currently configured bank. [Realtime evidence](../research/tested-realtime-memory.md)
+`messages` accepts 1–20 entries; sender is 1–255 characters and content 1–4000, with the upper bounds accepted and 0/21 entries, 256, and 4001 rejected (`too_short`, `too_long`, `string_too_long`). A fresh thread's first accepted batch returns `turn_epoch:1`; `record_event` calls do not advance the epoch; every accepted batch advances it by exactly one. `skip_decide:true` or any `has_media:true` short-circuits to `speak` without a modeled decision, but on a memory-integrated thread `recalled_context` is still populated from the configured bank. The captured silence response is exactly `{decision:"stay_silent",turn_epoch,tags:[],recalled_context:""}`. Unknown top-level and nested fields are ignored. [Realtime evidence](../research/tested-realtime-memory.md)
 
-Social Signals is documented but not exhibited. With the integration configured, before/after WSS attachment, across all documented event types and a two-human modeled batch, responses still had empty `tags` and no signal frame arrived. Implementations MUST return the tested empty tags for these triggers and MUST NOT claim a `SignalData` wire contract. Another undocumented trigger may exist. [Realtime evidence](../research/tested-realtime-memory.md)
+Social Signals is documented but not exhibited. With the integration configured, before and after WSS attachment, across all documented event types and a two-human modeled batch, responses still had empty `tags` and no signal frame arrived. Implementations MUST return `tags:[]` for these triggers and MUST NOT claim a `SignalData` wire contract. Another undocumented trigger may exist. [Realtime evidence](../research/tested-realtime-memory.md)
 
 ### `POST /v1/turn-taking/actions/record_event`
 
@@ -78,7 +80,7 @@ type RecordEventRequest={
 type RecordEventResponse={tags:string[]};
 ```
 
-Each documented event returned exactly `{tags:[]}`. An unknown type produced 422 lowercase request validation at `loc:["type"]`. [Realtime evidence](../research/tested-realtime-memory.md)
+Each documented event MUST return exactly `{tags:[]}` (deep-equal). An unknown type produces 422 lowercase request validation at `loc:["type"]`, type `literal_error`. Events are free and do not touch the epoch. [Realtime evidence](../research/tested-realtime-memory.md)
 
 ## Reply refinement and scheduling
 
@@ -93,14 +95,22 @@ type RespondRequest={
 };
 type ScheduledMessage={
   id:string;thread_id:string;content:string;position:number;
-  deliver_at:string;status:string;created_at:string;updated_at:string;
+  deliver_at:string;status:"scheduled";created_at:string;updated_at:string;
 };
 type RespondResponse={scheduled:ScheduledMessage[];superseded:boolean};
 ```
 
-A current epoch returns 1–5 zero-based scheduled entries with strictly increasing delivery times and may materially rewrite the draft. A stale epoch returns HTTP 200 exactly `{scheduled:[],superseded:true}` without relevant billing. [Realtime evidence](../research/tested-realtime-memory.md)
+A current epoch returns 1–5 zero-based scheduled entries with strictly increasing delivery times and may materially rewrite the draft. A draft with more than five natural bubbles MUST be merged down to at most five with all content preserved, never truncated. Every entry has `status:"scheduled"`, `thread_id` equal to the request, non-empty `content`, and `updated_at` equal to `created_at`. `created_at` is stamped per entry at scheduling time (entries are monotone and within 5 ms of each other), not shared. A stale epoch returns HTTP 200 exactly `{scheduled:[],superseded:true}` without turn-taking or Theory-of-Mind billing. [Realtime evidence](../research/tested-realtime-memory.md)
 
-For bubble `i`, let `typing_i=min(words_i/typing_wpm*60000,max_typing_ms)`. First delivery is `created_at + reading_delay_ms + typing_0`. Every later delivery follows the prior delivery by `200 + typing_i` milliseconds. Comparisons against serialized production timestamps MUST allow ±10 ms float/serialization drift (1 ms has been observed). `max_typing_ms` caps typing only; it excludes the fixed 200 ms inter-bubble gap. [Realtime evidence](../research/tested-realtime-memory.md)
+Pacing is fully determined. With `words_i` the whitespace-token count of bubble `i`:
+
+```text
+typing_i   = min(max_typing_ms, max(500, words_i / typing_wpm * 60000))
+deliver_0  = created_at_0 + reading_delay_ms + typing_0
+deliver_i  = deliver_{i-1} + 200 + typing_i        (i ≥ 1)
+```
+
+The 500 ms typing floor and the fixed 200 ms inter-bubble gap are mandatory; `max_typing_ms` caps typing only and excludes the gap. When `pacing` or any of its members is omitted, the defaults MUST be `reading_delay_ms=0`, `typing_wpm=150`, and `max_typing_ms=8000`. Comparisons against serialized production timestamps MUST allow ±10 ms drift (1 ms has been observed). [Realtime evidence](../research/tested-realtime-memory.md)
 
 ## WebSocket frames
 
@@ -110,14 +120,14 @@ Connect to `realtime.connect_url` without an additional bearer header. The first
 type AttachedFrame={
   type:"attached";
   channel:string;
-  server_time:string;
+  server_time:string; // .ffffff+00:00 offset form
 };
 ```
 
-It MUST NOT be wrapped in the event envelope. Subsequent captured frames use:
+It MUST NOT be wrapped in the event envelope. Subsequent frames use:
 
 ```ts
-type EventFrame<T>={id:string;type:string;channel:string;ts:string;data:T};
+type EventFrame<T>={id:string;type:string;channel:string;ts:string;data:T}; // id = "evt_" + 32 lowercase hex
 type TypingData={thread_id:string;typing:boolean};
 type MessageData={
   message_id:string;thread_id:string;content:string;position:number;
@@ -127,9 +137,9 @@ type TypingFrame=EventFrame<TypingData>&{type:"turn_taking.typing"};
 type MessageFrame=EventFrame<MessageData>&{type:"turn_taking.message"};
 ```
 
-Delivery order is attached → typing true → all ordered messages → typing false. Every message position is zero-based and every bubble echoes the full metadata object unchanged. Each WSS `message_id` is a UUID generated for delivery and MUST differ from the position-matched HTTP scheduled `id`; this held for all five bubbles in the multi-bubble test. Messages arrived near their HTTP `deliver_at` values. No `turn_taking.signal` frame was observed under documented triggers. [Realtime evidence](../research/tested-realtime-memory.md)
+The per-reply sequence MUST be exactly attached → typing `true` → one message per scheduled entry in position order → typing `false` (N+3 frames, nothing else). `channel` on every frame equals the thread channel. Every message position is zero-based; every bubble echoes the full request metadata unchanged, or `null` when the request omitted it. Each WSS `message_id` is a UUID generated for delivery and MUST differ from the position-matched HTTP scheduled `id`. Multiple sockets attached to one channel through different grants MUST receive identical frames with identical event ids and message ids. Observed `sent_at` trailed `deliver_at` by 6–251 ms and `ts` trailed `sent_at` by about 10 ms; implementations SHOULD deliver within that envelope. No `turn_taking.signal` frame was observed under documented triggers. [Realtime evidence](../research/tested-realtime-memory.md)
 
-An attached socket survives grant expiry. A late connection in the tested window upgrades and closes with code 4000. Clients recover by reopening the same thread for a fresh grant. [Realtime evidence](../research/tested-realtime-memory.md)
+An attached socket survives grant expiry. A late connection (about two seconds after expiry) or a garbage token completes the HTTP upgrade and then closes with code 4000 and an empty reason. Clients recover by reopening the same thread for a fresh grant. [Realtime evidence](../research/tested-realtime-memory.md)
 
 ## Social Memory
 
@@ -141,7 +151,7 @@ type IngestRequest={scope_id:string;transcript:MemoryMessage[]};
 type IngestResponse={ingested:number};
 ```
 
-The transcript is ordered and non-empty. `Idempotency-Key` is optional but, when present, is first-write-wins: both identical and changed-body replays return the first 200 response; only the first body affects memory; identical replay does not duplicate facts. [Realtime evidence](../research/tested-realtime-memory.md)
+The transcript is ordered and non-empty; an empty transcript returns 422 `too_short` at `loc:["transcript"]`. `ingested` MUST equal the transcript length. `Idempotency-Key` is optional; without it every call appends. When present it is first-write-wins and indexed by `(owner,key)` across scopes: identical, changed-body, and different-`scope_id` replays all return the first 200 response, only the first body affects memory, and replay does not duplicate facts. Unknown fields are ignored. [Realtime evidence](../research/tested-realtime-memory.md)
 
 ### `POST /v1/social-memory/actions/recall`
 
@@ -149,7 +159,7 @@ Body `{scope_id:string,message:{speaker:string,text:string}}`. Success is exactl
 
 ### `POST /v1/social-memory/actions/ask`
 
-Body `{scope_id:string,question:string}`. Success is exactly `{answer:string}`. Answers MUST be grounded in ingested content and preserve tested ordering facts. Empty question returns 422 lowercase request validation at `loc:["question"]`. [Realtime evidence](../research/tested-realtime-memory.md)
+Body `{scope_id:string,question:string}`. Success is exactly `{answer:string}`. Answers MUST be grounded in ingested content and preserve tested ordering facts. Empty question returns 422 lowercase request validation at `loc:["question"]`, type `string_too_short`. [Realtime evidence](../research/tested-realtime-memory.md)
 
 ## Non-endpoints
 

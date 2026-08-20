@@ -27,7 +27,7 @@ Every persisted resource MUST be keyed by an immutable owner derived from the ve
 
 A thread is created or reopened, receives ordered batches, and increments `turn_epoch` once per accepted batch. Reopen preserves state, updates supplied integrations, preserves omitted integrations, and rotates the short-lived WSS grant. A stale response is superseded atomically and schedules nothing. [Realtime evidence](../research/tested-realtime-memory.md)
 
-Social Memory is append-only through the public surface. Reusing an ingest key MUST replay the first response and preserve the first body, even if a later body differs. No public list, clear, or delete route is documented; callers reset by choosing a new scope. [Realtime evidence](../research/tested-realtime-memory.md) [Documented surface](../research/docs-api-surface.md)
+Social Memory is append-only through the public surface. Reusing an ingest key MUST replay the first response and preserve the first body, even if a later body differs or targets a different scope; the key is owner-wide, not scope-wide. No public list, clear, or delete route is documented; callers reset by choosing a new scope. [Realtime evidence](../research/tested-realtime-memory.md) [Documented surface](../research/docs-api-surface.md)
 
 `analyze` returns a complete report synchronously but exposes no report id, `Location`, or `x-report-id`. The public `Report/by-id` read exists, yet a newly analyzed report is not reachable through the tested flow; the recreation MUST reproduce the action response and repository absence behavior while treating linkage as unresolved. [Intelligence evidence](../research/tested-intelligence-personas.md)
 

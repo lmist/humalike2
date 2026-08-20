@@ -8,7 +8,7 @@ status: complete
 
 ## Phase 0 — Live contract harness
 
-Adopt the committed realtime and intelligence suites as executable acceptance tests. Parameterize target origin so the same assertions can run against production and the recreation; preserve fresh per-run ids and semantic assertions over generated text. Implement request-id middleware and route-specific error serializers before model behavior. Exit when the recreation can run the non-model portions without altering test expectations. [Conformance strategy](./08-parity-and-open-questions.md)
+Adopt the committed realtime and intelligence suites as executable acceptance tests. Both read `HUMALIKE_API_URL` (default production) and `NODE`, derive WSS host expectations from that origin, and exit with code 3 when a 402 truncates billable checks, so the same assertions run against production and the recreation; preserve fresh per-run ids and semantic assertions over generated text. Implement request-id middleware and route-specific error serializers before model behavior. Exit when the recreation can run the non-model portions without altering test expectations. [Conformance strategy](./08-parity-and-open-questions.md)
 
 ## Phase 1 — Identity, tenancy, and credits
 
@@ -16,15 +16,15 @@ Implement bearer verification, owner injection, repository predicates, credit re
 
 ## Phase 2 — Thread state and realtime delivery
 
-Implement create/reopen, integration update/preserve behavior, 30-second-class grants, distinct attached frame, epoch advancement, event handling, schedules, typing/message fanout, delivery-specific message ids, metadata echo, expiry close 4000, and reconnect through reopen. Use deterministic model substitutes initially. Exit when all structural realtime assertions pass against the recreation. [Realtime API](./03-api-realtime-memory.md)
+Implement create/reopen, integration update/preserve behavior, 30-second HMAC-signed `token` grants, distinct attached frame, exact N+3 frame sequence, epoch advancement, event handling, schedules, typing/message fanout, delivery-specific message ids, metadata echo, expiry close 4000, and reconnect through reopen. Use deterministic model substitutes initially. Exit when all structural realtime assertions pass against the recreation. [Realtime API](./03-api-realtime-memory.md)
 
 ## Phase 3 — Model-backed turn-taking
 
-Implement speak/silence routing, media/skip overrides, memory-assisted context, Theory-of-Mind refinement, 1–5 bubble generation, and exact pacing math. Match stale-epoch no-charge behavior and semantic invariants without pinning prose. Exit when the full realtime suite passes repeatedly within an approved credit budget. [Core engine](./05-core-engine.md)
+Implement speak/silence routing, media/skip overrides (with recalled context still populated), memory-assisted context, Theory-of-Mind refinement, 1–5 bubble generation with merge-not-truncate, and exact pacing math including the 500 ms typing floor and the 0/150/8000 defaults. Match stale-epoch no-charge behavior and semantic invariants without pinning prose. Exit when the full realtime suite passes repeatedly within an approved credit budget. [Core engine](./05-core-engine.md)
 
 ## Phase 4 — Social Memory
 
-Implement ordered append, first-write-wins idempotency across identical and changed bodies, subject-centric extraction, contradiction handling, recall, ask, and thread-bank integration. Exit when live tests prove bank switching/preservation, empty scope, person attribution, ordering, original-body retention, and no duplicate replay. [Realtime API](./03-api-realtime-memory.md)
+Implement ordered append, first-write-wins idempotency keyed by `(owner,key)` across identical bodies, changed bodies, and other scopes, subject-centric extraction, contradiction handling, recall, ask, and thread-bank integration. Exit when live tests prove bank switching/preservation, empty scope, person attribution, ordering, original-body retention, and no duplicate replay. [Realtime API](./03-api-realtime-memory.md)
 
 ## Phase 5 — Social Learning and foresee
 

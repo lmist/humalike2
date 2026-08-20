@@ -21,7 +21,7 @@ Generated prose is nondeterministic. Compatibility therefore means exact status,
 5. [Core engine design](./05-core-engine.md) — implementation pipelines grounded in HUMA, LoSoNA, and tested behavior.
 6. [System architecture](./06-system-architecture.md) — deployable services, storage, queues, billing, delivery, and security.
 7. [Implementation plan](./07-implementation-plan.md) — phased delivery with live conformance gates.
-8. [Live conformance and open questions](./08-parity-and-open-questions.md) — the 652-assertion validation mechanism and unresolved behavior.
+8. [Live conformance and open questions](./08-parity-and-open-questions.md) — the roughly 1,360-assertion live validation mechanism, the portable harness, and unresolved behavior.
 
 ## Evidence chain
 

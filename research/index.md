@@ -8,8 +8,8 @@ status: complete
 
 Production behavior is established by executable live tests:
 
-- [Live-tested realtime and memory API](./tested-realtime-memory.md) — 60 assertions covering HTTP, WSS, turn-taking, Social Signals negative behavior, memory, idempotency, and billing.
-- [Live-tested intelligence and personas API](./tested-intelligence-personas.md) — 592 assertions covering learning, foresee, observability, audit, personas, endpoint errors, timings, and polling cost.
+- [Live-tested realtime and memory API](./tested-realtime-memory.md) — 83 assertions covering HTTP, WSS, turn-taking, pacing constants, grants, Social Signals negative behavior, memory, owner-wide idempotency, and billing.
+- [Live-tested intelligence and personas API](./tested-intelligence-personas.md) — roughly 1,300 assertions covering learning, foresee, observability, audit grammar and limits, personas down to gate literals, endpoint error bodies, timings, and polling cost.
 
 Supporting research supplies documentary surface and implementation rationale:
 
