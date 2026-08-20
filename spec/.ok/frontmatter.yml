@@ -1,0 +1,7 @@
+title: Humalike API Recreation Specification
+description: End-to-end specification for rebuilding a service compatible with
+  the Humalike public API.
+tags:
+  - humalike
+  - specification
+  - api
