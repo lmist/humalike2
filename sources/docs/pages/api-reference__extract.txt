@@ -1,0 +1,201 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Extract profile
+
+> Turn a chat transcript into a norms profile and a ready-to-use prompt block.
+
+```http theme={null}
+POST https://api.humalike.com/v1/social-learning/actions/extract
+```
+
+Send a chat transcript and receive a structured profile of how the group talks,
+plus a `prompt_block` — a rendered, drop-in instruction you can place in an
+agent's prompt so it matches that voice.
+
+## When to call it
+
+<Warning>
+  **Not on every message.** `extract` reads the whole transcript and reasons
+  about it, so it takes seconds. It must never sit between a user's message and
+  your agent's reply.
+</Warning>
+
+Call it in the background, cache the `prompt_block`, and have your reply path
+read the cache. Refresh on a slow clock — a group's voice barely changes from
+one message to the next:
+
+| Conversation        | Refresh                                 |
+| ------------------- | --------------------------------------- |
+| A live 1:1 chat     | On the first turn, then every \~5 turns |
+| A busy group thread | Hourly                                  |
+| A slow channel      | Daily, or weekly                        |
+
+A good default is to refresh once the conversation has grown by about 5
+messages, and never more than once a minute. Pass a rolling window of the last
+\~100 messages rather than the entire history — you want the voice the group uses
+*now*.
+
+Cache it so your reply path never waits on it. See
+[When to call each API](/calling-patterns) for the full picture.
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Request body
+
+<ParamField body="transcript" type="object" required>
+  The conversation to analyze.
+</ParamField>
+
+<ParamField body="transcript.messages" type="Message[]" required>
+  The messages to analyze, in order. Must contain at least one message.
+</ParamField>
+
+<ParamField body="transcript.source" type="string">
+  Optional label for where the transcript came from (e.g. a chat name).
+</ParamField>
+
+Each **Message** has:
+
+<ParamField body="id" type="string" required>
+  A stable identifier for the message, unique within the transcript.
+</ParamField>
+
+<ParamField body="speaker" type="string" required>
+  Who sent the message (a display name or stable id).
+</ParamField>
+
+<ParamField body="text" type="string" required>
+  The message text.
+</ParamField>
+
+<ParamField body="channel" type="string">
+  Optional channel or room the message was sent in.
+</ParamField>
+
+<ParamField body="timestamp" type="string">
+  Optional timestamp for the message.
+</ParamField>
+
+<ParamField body="reply_to" type="string">
+  Optional `id` of the message this one replies to. Preserving reply structure
+  improves the analysis.
+</ParamField>
+
+```json Request theme={null}
+{
+  "transcript": {
+    "messages": [
+      {"id": "m1", "speaker": "ada", "text": "yo we still on for tonight"},
+      {"id": "m2", "speaker": "max", "text": "ye 8pm same spot", "reply_to": "m1"}
+    ]
+  }
+}
+```
+
+## Response
+
+<ResponseField name="prompt_block" type="string">
+  A ready-to-use, human-readable instruction block describing how to write like
+  this group. Drop it straight into an agent's prompt.
+</ResponseField>
+
+<ResponseField name="profile" type="object">
+  The structured profile the `prompt_block` is rendered from. Top-level fields
+  include `summary`, `register` (formality, warmth, casing), `style` (length,
+  formatting, emoji), `lexicon`, `banned_phrases`, `address`, `taboos`, `humor`,
+  `roles`, `norms`, `in_jokes`, and `meta`. Read individual fields when you want
+  finer control than `prompt_block` gives.
+</ResponseField>
+
+```json 200 OK theme={null}
+{
+  "prompt_block": "Match this group's voice. Write in lowercase; keep messages to one or two short lines; no headers or bullet lists; emoji sparing. ...",
+  "profile": {
+    "summary": "casual, lowercase, terse group chat",
+    "register": {"formality": "casual", "warmth": "friendly", "casing": "lowercase", "confidence": 0.6},
+    "style": {"length": "one to two short lines", "formatting": "minimal; no headers or lists", "emoji": "sparing"},
+    "lexicon": [],
+    "in_jokes": [],
+    "meta": {"message_count": 2, "channels": []}
+  }
+}
+```
+
+## Errors
+
+| Status | Code               | When                                                                                          |
+| ------ | ------------------ | --------------------------------------------------------------------------------------------- |
+| `400`  | `VALIDATION_ERROR` | The transcript is too large or it could not be analyzed.                                      |
+| `401`  | `UNAUTHORIZED`     | The bearer token is missing, invalid, or expired.                                             |
+| `402`  | `PAYMENT_REQUIRED` | Your credit balance can't cover the request. See [Credits and billing](/credits-and-billing). |
+| `403`  | `forbidden`        | The credentials are valid but not permitted for this endpoint.                                |
+| `422`  | `VALIDATION_ERROR` | The body is malformed or `messages` is empty.                                                 |
+| `502`  | `UPSTREAM_ERROR`   | A dependency the request relies on was unavailable. Retry.                                    |
+
+See [Errors](/api-reference/errors) for the full envelope shape.
+
+## Example
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  curl https://api.humalike.com/v1/social-learning/actions/extract \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "transcript": {
+        "messages": [
+          {"id": "m1", "speaker": "ada", "text": "yo we still on for tonight"},
+          {"id": "m2", "speaker": "max", "text": "ye 8pm same spot"}
+        ]
+      }
+    }'
+  ```
+
+  ```python Python theme={null}
+  import os
+  import httpx
+
+  resp = httpx.post(
+      "https://api.humalike.com/v1/social-learning/actions/extract",
+      headers={"Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}"},
+      json={
+          "transcript": {
+              "messages": [
+                  {"id": "m1", "speaker": "ada", "text": "yo we still on for tonight"},
+                  {"id": "m2", "speaker": "max", "text": "ye 8pm same spot"},
+              ]
+          }
+      },
+  )
+  resp.raise_for_status()
+  data = resp.json()
+  print(data["prompt_block"])
+  ```
+
+  ```typescript TypeScript theme={null}
+  const res = await fetch("https://api.humalike.com/v1/social-learning/actions/extract", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      transcript: {
+        messages: [
+          { id: "m1", speaker: "ada", text: "yo we still on for tonight" },
+          { id: "m2", speaker: "max", text: "ye 8pm same spot" },
+        ],
+      },
+    }),
+  });
+
+  const data = await res.json();
+  console.log(data.prompt_block);
+  ```
+</CodeGroup>

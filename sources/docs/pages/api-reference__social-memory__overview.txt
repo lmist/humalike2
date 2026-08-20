@@ -1,0 +1,113 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Social Memory
+
+> Person-centric memory of a group conversation — ingest, recall, and ask.
+
+The Social Memory API gives an agent a running memory of a group conversation
+and lets it reason **person-centrically** about the people in it: every fact is
+attributed to the person it is about, not to whoever happened to say it.
+
+It exposes three actions over the same conversation scope:
+
+* [`ingest`](/api-reference/social-memory/ingest) — append messages to a scope.
+  A plain write: it just stores them, and nothing waits on it.
+* [`recall`](/api-reference/social-memory/recall) — given an arriving turn,
+  return injectable context about the people involved. Billable.
+* [`ask`](/api-reference/social-memory/ask) — answer a natural-language
+  question over a scope. Billable.
+
+You ingest as the conversation happens, and on each new turn either pull
+context with `recall` (typical agent loop) or query the scope directly with
+`ask`.
+
+## When to call them
+
+All three are per-message or on-demand calls — none of them belong on a timer.
+
+* **`ingest`: every message**, both the human's and your agent's. Memory can only
+  recall what it has seen, so hold nothing back. Fire it in the background and
+  ignore the result; a dropped `ingest` costs you one message of memory, not a
+  reply.
+* **`recall`: on the turns where you are going to reply.** In a 1:1 chat that is
+  every message. In a group thread where most messages get `stay_silent`, call
+  it only after the decision comes back `speak` — context recalled for a reply
+  you never draft is context nobody reads.
+* **`ask`: on demand.** When a human, or your agent, has an actual question about
+  the conversation's history. It is not part of the reply loop.
+
+`recall` runs while the user waits, so issue it in parallel with your other
+per-message calls rather than in sequence. See
+[When to call each API](/calling-patterns).
+
+## Scopes
+
+A **scope** is one conversation — "which group" the memory is about. The
+caller chooses the identifier:
+
+<ParamField path="scope_id" type="string" required>
+  A non-empty string of up to 255 characters. The caller picks it (for example,
+  `team-chat-1` or `room:42`). All three actions are addressed by this id.
+</ParamField>
+
+Scopes are **partitioned by the verified caller**: one account's scopes are
+invisible to another's, even if they choose the same `scope_id`. There is no
+clear or delete endpoint — to reset a scope, generate a new `scope_id` and
+ingest into that. The old scope simply stops being read from.
+
+## Messages
+
+Every transcript message — both the rows you ingest and the arriving turn
+passed to `recall` — uses the same shape:
+
+<ParamField body="speaker" type="string" required>
+  Who sent the message: a display name or stable id, 1–255 characters. The
+  speaker is part of the signal — the same text from different speakers pulls
+  different context on `recall`.
+</ParamField>
+
+<ParamField body="text" type="string" required>
+  The message text.
+</ParamField>
+
+## What a read sees
+
+`recall` and `ask` answer from the conversation you have ingested into the
+scope. A scope can grow without bound — there is no cap on how much you ingest,
+and you can keep ingesting for the life of the conversation.
+
+The only request rejected up front is an incoming `recall.message.text` or
+`ask.question` that is itself too large for a single call: shorten it and retry
+(`400`). An empty scope is a no-op for `recall` and `ask` — both return an empty
+result immediately.
+
+## Authentication
+
+Every request authenticates with a bearer token. See
+[Authentication](/authentication) for the full model.
+
+```
+Authorization: Bearer <token>
+```
+
+## Errors
+
+All three actions return the standard [error envelope](/api-reference/errors).
+Shared status codes:
+
+| Status | Code               | When                                                                                                          |
+| ------ | ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `400`  | `VALIDATION_ERROR` | The request could not be processed, or `recall.message.text` / `ask.question` is too large for a single call. |
+| `401`  | `UNAUTHORIZED`     | The bearer token is missing, invalid, or expired.                                                             |
+| `402`  | `PAYMENT_REQUIRED` | Your account does not have enough credits to cover a billable read (`recall`, `ask`). You are not charged.    |
+| `403`  | `forbidden`        | The token is valid but not allowed here.                                                                      |
+| `422`  | `VALIDATION_ERROR` | The body is malformed (missing `scope_id`, empty `transcript`, etc.).                                         |
+| `502`  | `UPSTREAM_ERROR`   | A dependency the request relies on was unavailable. Retry with backoff.                                       |
+
+## Next
+
+* [Ingest](/api-reference/social-memory/ingest) — append messages to a scope.
+* [Recall](/api-reference/social-memory/recall) — get context for an arriving turn.
+* [Ask](/api-reference/social-memory/ask) — answer a question over a scope.

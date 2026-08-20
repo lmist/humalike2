@@ -1,0 +1,127 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Record an event
+
+> Report non-message activity — typing and edits — to inform behavioural signals.
+
+```http theme={null}
+POST https://api.humalike.com/v1/turn-taking/actions/record_event
+```
+
+Report activity that isn't a message: a user **started or stopped typing**, or
+**edited** a message. These events feed
+[behavioural signals](/api-reference/turn-taking/overview#behavioural-signals),
+which sharpen the speak/stay-silent decision and surface `turn_taking.signal`
+events (for example, detecting that a user has been typing without sending).
+
+You only need this when the thread enables behavioural signals. A sent message
+is reported through
+[`submit_messages`](/api-reference/turn-taking/submit-messages), not here.
+
+This call is not billable.
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Request body
+
+<ParamField body="thread_id" type="string" required>
+  The thread the event happened in.
+</ParamField>
+
+<ParamField body="type" type="string" required>
+  The kind of event: `typing_start`, `typing_stop`, or `message_edited`.
+</ParamField>
+
+<ParamField body="sender" type="string" required>
+  Who produced the event — the person's id, 1–255 characters.
+</ParamField>
+
+<ParamField body="client_ts" type="string">
+  Optional client-measured time of the event (ISO 8601). Improves the timing of
+  behavioural signals; falls back to server receipt time when omitted.
+</ParamField>
+
+```json Request theme={null}
+{
+  "thread_id": "b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+  "type": "typing_start",
+  "sender": "casey"
+}
+```
+
+## Response
+
+<ResponseField name="tags" type="string[]">
+  Any behavioural tags the event produced. Empty for typing and edit events
+  today.
+</ResponseField>
+
+```json 200 OK theme={null}
+{
+  "tags": []
+}
+```
+
+## Errors
+
+| Status | Code               | When                                                                                            |
+| ------ | ------------------ | ----------------------------------------------------------------------------------------------- |
+| `401`  | `UNAUTHORIZED`     | The bearer token is missing, invalid, or expired.                                               |
+| `403`  | `forbidden`        | The token is valid but not allowed here.                                                        |
+| `422`  | `VALIDATION_ERROR` | The body is malformed, or `type` is not one of `typing_start`, `typing_stop`, `message_edited`. |
+
+See [Errors](/api-reference/errors) for the envelope shape.
+
+## Example
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  curl https://api.humalike.com/v1/turn-taking/actions/record_event \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "thread_id": "b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+      "type": "typing_start",
+      "sender": "casey"
+    }'
+  ```
+
+  ```python Python theme={null}
+  import os
+  import httpx
+
+  resp = httpx.post(
+      "https://api.humalike.com/v1/turn-taking/actions/record_event",
+      headers={"Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}"},
+      json={
+          "thread_id": "b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+          "type": "typing_start",
+          "sender": "casey",
+      },
+  )
+  resp.raise_for_status()
+  print(resp.json()["tags"])
+  ```
+
+  ```typescript TypeScript theme={null}
+  const res = await fetch("https://api.humalike.com/v1/turn-taking/actions/record_event", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      thread_id: "b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+      type: "typing_start",
+      sender: "casey",
+    }),
+  });
+  if (!res.ok) throw new Error(`record_event failed: ${res.status}`);
+  ```
+</CodeGroup>

@@ -1,0 +1,126 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Get report
+
+> Read a previously analyzed reception report back by id.
+
+```http theme={null}
+GET https://api.humalike.com/v1/social-observability/repositories/Report/by-id/{id}
+```
+
+Every successful [Analyze transcript](/api-reference/analyze) call also stores
+its report. Use this endpoint to read one back later by id — for example, to
+render it in a dashboard after the agent's conversation has moved on.
+
+Reports are **owner-scoped**: a report you don't own reads as `null`, the same
+shape as a report that doesn't exist. There is no way to enumerate other users'
+reports.
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Path parameters
+
+<ParamField path="id" type="string" required>
+  The report's id (a UUID). Reports are created by
+  [Analyze transcript](/api-reference/analyze).
+</ParamField>
+
+## Response
+
+<ResponseField name="agent_name" type="string">
+  The agent the report is about, exactly as you sent it on the original analyze
+  request.
+</ResponseField>
+
+<ResponseField name="health_score" type="number">
+  The report's headline reading in `[0, 1]`, denormalized for cheap listing.
+  Matches `report.health_score`.
+</ResponseField>
+
+<ResponseField name="report" type="object">
+  The full reception report — the exact body the original
+  [Analyze transcript](/api-reference/analyze) call returned, including
+  `interactions`, `interaction_totals`, `per_user`, `findings`, `health_score`,
+  and `summary`.
+</ResponseField>
+
+A successful read returns `200 OK` with either the report payload above or
+`null` when no report with that id exists for the calling user.
+
+```json 200 OK theme={null}
+{
+  "agent_name": "support_bot",
+  "health_score": 0.42,
+  "report": {
+    "health_score": 0.42,
+    "summary": "Casey is showing repeat friction with the support_bot's stock responses...",
+    "interactions": [],
+    "interaction_totals": [],
+    "per_user": [],
+    "findings": []
+  }
+}
+```
+
+```json 200 OK (not found or not owned) theme={null}
+null
+```
+
+## Errors
+
+| Status | Code               | When                                              |
+| ------ | ------------------ | ------------------------------------------------- |
+| `401`  | `UNAUTHORIZED`     | The bearer token is missing, invalid, or expired. |
+| `422`  | `VALIDATION_ERROR` | `id` is not a well-formed UUID.                   |
+
+An unknown id, and a well-formed id owned by a different user, both return
+`200` with `null` — there is no way to tell a missing report from one you do
+not own. A malformed id (not a UUID) is rejected with `422`. See
+[Errors](/api-reference/errors) for the envelope shape.
+
+## Example
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  curl https://api.humalike.com/v1/social-observability/repositories/Report/by-id/$REPORT_ID \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN"
+  ```
+
+  ```python Python theme={null}
+  import os
+  import httpx
+
+  report_id = os.environ["REPORT_ID"]
+  resp = httpx.get(
+      f"https://api.humalike.com/v1/social-observability/repositories/Report/by-id/{report_id}",
+      headers={"Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}"},
+  )
+  resp.raise_for_status()
+  body = resp.json()
+  if body is None:
+      print("no such report")
+  else:
+      print(body["agent_name"], body["health_score"])
+  ```
+
+  ```typescript TypeScript theme={null}
+  const reportId = process.env.REPORT_ID!;
+  const res = await fetch(
+    `https://api.humalike.com/v1/social-observability/repositories/Report/by-id/${reportId}`,
+    { headers: { Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}` } },
+  );
+
+  const body = await res.json();
+  if (body === null) {
+    console.log("no such report");
+  } else {
+    console.log(body.agent_name, body.health_score);
+  }
+  ```
+</CodeGroup>

@@ -1,0 +1,301 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Foresee a reply
+
+> Read the room before you send: gauge what the other person is thinking, predict how they'll react to your draft, and get a refined reply.
+
+```http theme={null}
+POST https://api.humalike.com/v1/foresee/actions/foresee
+```
+
+Send a transcript and your agent's draft reply. In one call, the Theory of Mind
+API returns:
+
+* a **mental-state read** for each modelled subject — what they currently
+  believe, want, and feel,
+* a **predicted reaction** — what each subject likely says or does next if the
+  draft is sent as-is, with a `risk` rating,
+* a **refined reply** in your agent's voice that heads off the predicted
+  damage, plus a one-line `refinement_rationale` explaining why it changed.
+
+Use it before any user-facing message where landing well matters: support
+replies, sensitive negotiations, recovery from a misstep, or any agent that has
+to read the room.
+
+## When to call it
+
+Call `foresee` once per reply you are about to send, on the draft — it is a
+per-message call, on the path where the user is waiting.
+
+<Warning>
+  **If you use [`respond`](/api-reference/turn-taking/respond), you do not need
+  `foresee`.** Every `respond` already refines the draft through a Theory of Mind
+  pass before pacing it out. Calling `foresee` first means the second pass
+  rewrites the first pass's output instead of your agent's own words.
+</Warning>
+
+So there are two integrations, and you want exactly one of them:
+
+* **Using turn-taking.** Send your raw draft straight to `respond`. The
+  refinement happens inside it. Pass a `system_prompt` so the rewrite stays in
+  your agent's voice.
+* **Not using turn-taking.** You have your own delivery path and just want a
+  draft reviewed before you send it. Call `foresee`, send `refined_reply`
+  yourself.
+
+Reach for `foresee` directly, even alongside turn-taking, only when you need the
+`mental_state` and `predicted_reaction` outputs themselves — for example to
+branch on `risk` before deciding whether to reply at all. `respond` refines the
+draft but does not hand these back to you.
+
+See [When to call each API](/calling-patterns).
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+  Tokens are issued as `ak_...` keys tied to your account.
+</ParamField>
+
+## Request body
+
+<ParamField body="transcript" type="Turn[]" required>
+  The conversation so far, in order. Must contain at least one turn.
+</ParamField>
+
+<ParamField body="candidate_reply" type="string" required>
+  The agent's draft reply — what would be sent if you did nothing. This is the
+  message the API evaluates and rewrites.
+</ParamField>
+
+<ParamField body="agent_name" type="string" default="agent">
+  Which speaker in `transcript` is your agent. The service never infers this:
+  the agent's draft is the one being refined; everyone else is treated as
+  someone the agent is replying to, whose reaction is predicted.
+</ParamField>
+
+<ParamField body="system_prompt" type="string">
+  Optional system-prompt text — the agent's identity, character, style, and
+  goal — up to 100,000 characters. `refined_reply` keeps this voice, and when the
+  prompt states a goal, the rewrite also moves the conversation toward a state
+  where that goal is achievable. Sent per request, so each agent sends its own.
+</ParamField>
+
+<ParamField body="subject_name" type="string">
+  Optional. Restrict the mental-state read and predicted reaction to a single
+  person by name. If omitted, all non-agent speakers are modelled.
+</ParamField>
+
+Each **Turn** has:
+
+<ParamField body="speaker" type="string" required>
+  Who sent the message. Used both to identify the agent (via `agent_name`) and
+  to label each modelled subject in the response.
+</ParamField>
+
+<ParamField body="text" type="string" required>
+  The message text.
+</ParamField>
+
+```json Request theme={null}
+{
+  "transcript": [
+    {"speaker": "customer", "text": "invoices won't download."},
+    {"speaker": "agent",    "text": "which browser? check the popup icon"},
+    {"speaker": "customer", "text": "Chrome. no popup icon there."},
+    {"speaker": "customer", "text": "ok i'll try later. thanks anyway."}
+  ],
+  "candidate_reply": "No problem! Reach out if it still doesn't work.",
+  "agent_name": "agent",
+  "system_prompt": "You are Ana from Vantage support: warm and concise. Your goal: the customer tries a fix with you instead of churning."
+}
+```
+
+## Response
+
+The response holds parallel arrays — one entry per modelled subject — plus the
+rewritten reply.
+
+<ResponseField name="mental_state" type="MentalState[]">
+  What each modelled subject currently believes, wants, and feels.
+</ResponseField>
+
+<ResponseField name="predicted_reaction" type="PredictedReaction[]">
+  How each modelled subject is predicted to react if `candidate_reply` is sent
+  as-is. Same order as `mental_state`.
+</ResponseField>
+
+<ResponseField name="refined_reply" type="string">
+  An improved reply, written in the agent's voice, rewritten to head off the
+  predicted damage.
+</ResponseField>
+
+<ResponseField name="refinement_rationale" type="string">
+  One line: why the reply changed.
+</ResponseField>
+
+Each **MentalState** has:
+
+<ResponseField name="name" type="string">
+  The modelled speaker.
+</ResponseField>
+
+<ResponseField name="beliefs" type="string[]">
+  What the subject currently believes about the situation.
+</ResponseField>
+
+<ResponseField name="goals" type="string[]">
+  What the subject currently wants.
+</ResponseField>
+
+<ResponseField name="emotions" type="Emotion[]">
+  The subject's emotional state. Each emotion has a `type` (e.g.
+  `resignation`, `frustration`) and an `intensity` between `0.0` and `1.0`.
+</ResponseField>
+
+Each **PredictedReaction** has:
+
+<ResponseField name="name" type="string">
+  The subject this reaction is for.
+</ResponseField>
+
+<ResponseField name="summary" type="string">
+  One line: what the subject does next.
+</ResponseField>
+
+<ResponseField name="predicted_message" type="string">
+  The likely next message the subject would send, or `"(no reply)"` if they
+  are predicted to disengage.
+</ResponseField>
+
+<ResponseField name="risk" type="string">
+  How badly the draft is predicted to land for this subject — including
+  against your agent's stated goal, when `system_prompt` gives one: `low`,
+  `medium`, or `high`. Treat `medium` and `high` as a signal to send
+  `refined_reply` instead.
+</ResponseField>
+
+```json 200 OK theme={null}
+{
+  "mental_state": [
+    {
+      "name": "customer",
+      "beliefs": ["the agent didn't actually help", "the problem is still unresolved"],
+      "goals": ["disengage without further frustration"],
+      "emotions": [
+        {"type": "resignation", "intensity": 0.7},
+        {"type": "mild_frustration", "intensity": 0.4}
+      ]
+    }
+  ],
+  "predicted_reaction": [
+    {
+      "name": "customer",
+      "summary": "the customer leaves unhappy and is unlikely to return",
+      "predicted_message": "(no reply)",
+      "risk": "high"
+    }
+  ],
+  "refined_reply": "Sorry that didn't get you there — invoices not downloading in Chrome with no popup icon is usually a blocked-download setting. I'll send a 2-step fix you can try whenever you're back, and I'll keep this ticket open so we finish it together.",
+  "refinement_rationale": "The draft accepts the customer's exit; the refined reply takes ownership, names a concrete next step, and keeps the door open."
+}
+```
+
+## Errors
+
+| Status | Code               | When                                                                                                    |
+| ------ | ------------------ | ------------------------------------------------------------------------------------------------------- |
+| `400`  | `VALIDATION_ERROR` | The transcript is too large to analyze, or it could not be analyzed.                                    |
+| `401`  | `UNAUTHORIZED`     | The bearer token is missing, invalid, or expired.                                                       |
+| `402`  | `PAYMENT_REQUIRED` | Your account does not have enough credits to cover this request. Top up and retry. You are not charged. |
+| `403`  | `forbidden`        | The token is valid but not allowed to call foresee.                                                     |
+| `422`  | `VALIDATION_ERROR` | The body is malformed, `transcript` is empty, or `candidate_reply` is missing.                          |
+| `502`  | `UPSTREAM_ERROR`   | A dependency the request relies on was unavailable. The request is not billed; safe to retry.           |
+
+Foresee is a billable operation. A request is priced and checked against your
+credit balance before it is processed: an uncovered request is rejected with
+`402` and is not billed, and a request that fails is not billed either. See
+[Credits and billing](/credits-and-billing).
+
+## Example
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  curl https://api.humalike.com/v1/foresee/actions/foresee \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "transcript": [
+        {"speaker": "customer", "text": "invoices won'\''t download."},
+        {"speaker": "agent",    "text": "which browser? check the popup icon"},
+        {"speaker": "customer", "text": "Chrome. no popup icon there."},
+        {"speaker": "customer", "text": "ok i'\''ll try later. thanks anyway."}
+      ],
+      "candidate_reply": "No problem! Reach out if it still doesn'\''t work.",
+      "agent_name": "agent",
+      "system_prompt": "You are Ana from Vantage support: warm and concise. Your goal: the customer tries a fix with you instead of churning."
+    }'
+  ```
+
+  ```python Python theme={null}
+  import os
+  import httpx
+
+  candidate_reply = "No problem! Reach out if it still doesn't work."
+
+  resp = httpx.post(
+      "https://api.humalike.com/v1/foresee/actions/foresee",
+      headers={"Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}"},
+      json={
+          "transcript": [
+              {"speaker": "customer", "text": "invoices won't download."},
+              {"speaker": "agent",    "text": "which browser? check the popup icon"},
+              {"speaker": "customer", "text": "Chrome. no popup icon there."},
+              {"speaker": "customer", "text": "ok i'll try later. thanks anyway."},
+          ],
+          "candidate_reply": candidate_reply,
+          "agent_name": "agent",
+          "system_prompt": "You are Ana from Vantage support: warm and concise. Your goal: the customer tries a fix with you instead of churning.",
+      },
+      timeout=60.0,
+  )
+  resp.raise_for_status()
+  data = resp.json()
+
+  # Rank the predicted risk across all modelled subjects (low < medium < high).
+  risk_rank = {"low": 0, "medium": 1, "high": 2}
+  worst = max(data["predicted_reaction"], key=lambda r: risk_rank[r["risk"]])
+
+  # Send your original draft when the risk is low; otherwise send the refined reply.
+  reply = candidate_reply if worst["risk"] == "low" else data["refined_reply"]
+  print(f"worst predicted risk: {worst['risk']}")
+  print(reply)
+  ```
+
+  ```typescript TypeScript theme={null}
+  const res = await fetch("https://api.humalike.com/v1/foresee/actions/foresee", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      transcript: [
+        { speaker: "customer", text: "invoices won't download." },
+        { speaker: "agent",    text: "which browser? check the popup icon" },
+        { speaker: "customer", text: "Chrome. no popup icon there." },
+        { speaker: "customer", text: "ok i'll try later. thanks anyway." },
+      ],
+      candidate_reply: "No problem! Reach out if it still doesn't work.",
+      agent_name: "agent",
+      system_prompt: "You are Ana from Vantage support: warm and concise. Your goal: the customer tries a fix with you instead of churning.",
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+  const data = await res.json();
+  console.log(data.refined_reply);
+  ```
+</CodeGroup>

@@ -1,0 +1,103 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Launch a run
+
+> Name the agent in a prepared run and start the audit.
+
+```http theme={null}
+POST https://api.humalike.com/v1/social-observability/actions/audit_launch
+```
+
+Tell the API which speaker in a prepared run is your agent, and start the
+audit. The call returns as soon as the run is accepted — the audit itself takes
+minutes and runs in the background. Collect the result with
+[`audit-run`](/api-reference/audit/run).
+
+This is the call that makes a run real. Before it, the run is parked and
+unbilled; after it, the audit executes whether or not you stay connected.
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Request body
+
+<ParamField body="run_id" type="string" required>
+  The run to launch, from [`audit_prepare`](/api-reference/audit/prepare).
+</ParamField>
+
+<ParamField body="agent_name" type="string" required>
+  Which speaker is your agent. Must be one of the `participants` returned by
+  `audit_prepare`, spelled identically. 1–255 characters.
+</ParamField>
+
+## Request
+
+```bash theme={null}
+curl https://api.humalike.com/v1/social-observability/actions/audit_launch \
+  -H "Authorization: Bearer $HUMALIKE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "run_id": "9f8b1c04-6d2a-4f31-9c77-2b1d0e5a8c43",
+    "agent_name": "support_bot"
+  }'
+```
+
+## Response
+
+```json theme={null}
+{
+  "run_id": "9f8b1c04-6d2a-4f31-9c77-2b1d0e5a8c43",
+  "agent_name": "support_bot",
+  "status": "queued"
+}
+```
+
+<ResponseField name="run_id" type="string">
+  The run that was launched.
+</ResponseField>
+
+<ResponseField name="agent_name" type="string">
+  The agent the audit will review. On a repeat call this is the name the
+  **first** launch set, which may differ from the one you just sent.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  `queued` while the audit is still running, `completed` once it has finished.
+  A first launch is always `queued`.
+</ResponseField>
+
+## Retrying is safe
+
+Launching the same run twice is a no-op success, not an error. If you lose the
+first response to a timeout, call again: you get `200`, the audit is not
+restarted, not billed twice, and the agent is not changed underneath a review
+already in progress. The `status` field tells you where the run actually got
+to, so a retry after a long silence is also a way to check whether it finished.
+
+## Errors
+
+| Status | Code               | Cause                                                                                                                                                  |
+| ------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `400`  | `VALIDATION_ERROR` | `agent_name` never speaks in the transcript, or the name is shared by more than one participant. The run stays prepared — fix the name and call again. |
+| `400`  | `VALIDATION_ERROR` | The run does not exist, or does not belong to you.                                                                                                     |
+| `401`  | `UNAUTHORIZED`     | Missing or invalid bearer token.                                                                                                                       |
+
+A name that does not appear in the transcript is refused rather than guessed
+at, so you are never billed for a review of a speaker who does not exist:
+
+```json theme={null}
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "agent_name must be one of the transcript's speakers",
+    "details": [{ "field": "agent_name", "message": "'suport_bot' never speaks" }]
+  }
+}
+```
+
+Next: [Get a run](/api-reference/audit/run).

@@ -1,0 +1,102 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Who am I
+
+> Verify a token and get the account id it belongs to.
+
+```http theme={null}
+POST https://api.humalike.com/v1/turn-taking/actions/whoami
+```
+
+Check that a token is valid and find out which account it belongs to. The call
+takes no parameters — the account is read from the token itself.
+
+Use it as a cheap preflight: call it once at startup to confirm a token still
+works before sending real traffic, rather than discovering a revoked token on
+your first billable call.
+
+This call is free and never billed. See
+[Credits and billing](/credits-and-billing).
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Request body
+
+The request body is an empty object.
+
+```json Request theme={null}
+{}
+```
+
+## Response
+
+<ResponseField name="user_id" type="string">
+  The id of the account the token belongs to.
+</ResponseField>
+
+```json 200 OK theme={null}
+{
+  "user_id": "user_31kQd7mS2wYpLc8vF0aBnR4tXe"
+}
+```
+
+## Errors
+
+| Status | Code           | When                                                       |
+| ------ | -------------- | ---------------------------------------------------------- |
+| `401`  | `UNAUTHORIZED` | The bearer token is missing, invalid, expired, or revoked. |
+| `403`  | `forbidden`    | The token is valid but not allowed here.                   |
+
+A `200` means the token is good. See [Errors](/api-reference/errors) for the
+envelope shape.
+
+## Example
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  curl https://api.humalike.com/v1/turn-taking/actions/whoami \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{}'
+  ```
+
+  ```python Python theme={null}
+  import os
+  import httpx
+
+  resp = httpx.post(
+      "https://api.humalike.com/v1/turn-taking/actions/whoami",
+      headers={"Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}"},
+      json={},
+  )
+  if resp.status_code == 401:
+      raise SystemExit("token is invalid or revoked")
+  resp.raise_for_status()
+  print("authenticated as", resp.json()["user_id"])
+  ```
+
+  ```typescript TypeScript theme={null}
+  const res = await fetch("https://api.humalike.com/v1/turn-taking/actions/whoami", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({}),
+  });
+  if (res.status === 401) throw new Error("token is invalid or revoked");
+  if (!res.ok) throw new Error(`whoami failed: ${res.status}`);
+  const { user_id } = await res.json();
+  ```
+</CodeGroup>
+
+## Next
+
+* [Read your usage](/api-reference/usage-summary) — your billed-call totals and per-component breakdown.
+* [Authentication](/authentication) — how tokens are issued and sent.

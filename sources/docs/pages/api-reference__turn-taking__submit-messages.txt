@@ -1,0 +1,217 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Submit messages
+
+> Feed inbound messages and get a speak / stay-silent decision for the agent.
+
+```http theme={null}
+POST https://api.humalike.com/v1/turn-taking/actions/submit_messages
+```
+
+Hand turn-taking the inbound messages as they arrive and get back whether the
+agent should **speak now or stay silent**. Call it on every inbound message, or
+on a small batch — turn-taking weighs the timing and content to decide if this
+is the agent's moment to reply.
+
+When the decision is `speak`, draft your agent's reply and submit it with
+[`respond`](/api-reference/turn-taking/respond), passing back the `turn_epoch`
+from this response.
+
+This call is billable, unless the decision is short-circuited by `skip_decide`
+or `has_media`. See [Billing](/api-reference/turn-taking/overview#billing).
+
+This call is idempotent: retrying the same batch does not double-record it.
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Request body
+
+<ParamField body="thread_id" type="string" required>
+  The thread to submit to, from [`open_thread`](/api-reference/turn-taking/open-thread).
+</ParamField>
+
+<ParamField body="messages" type="InboundMessage[]" required>
+  The inbound messages, in order. 1–20 per call.
+
+  <Expandable title="InboundMessage">
+    <ParamField body="sender" type="string" required>
+      Who sent the message — a display name or stable id, 1–255 characters.
+    </ParamField>
+
+    <ParamField body="content" type="string" required>
+      The message text, 1–4000 characters.
+    </ParamField>
+
+    <ParamField body="client_ts" type="string">
+      Optional client-measured send time (ISO 8601). Used only to time
+      [behavioural signals](/api-reference/turn-taking/overview#behavioural-signals)
+      when the thread enables them; otherwise server receipt time is used.
+    </ParamField>
+
+    <ParamField body="has_media" type="boolean" default="false">
+      Set `true` when the message carries non-text media — an image, GIF, video,
+      voice note, or document. Media generally warrants a reply, so a batch
+      containing any flagged message decides `speak` without evaluating the
+      conversation, and the call is not billed.
+
+      Put a short placeholder in `content` (for example `"[image]"`) so the
+      transcript still reads sensibly on later turns.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="system_prompt" type="string">
+  Optional system-prompt text — the agent's identity, character, and rules
+  (such as when to join in versus stay quiet) — applied to this decision. Up to
+  100,000 characters. Sent per request, so each agent in a group chat can send
+  its own.
+</ParamField>
+
+<ParamField body="skip_decide" type="boolean" default="false">
+  Set `true` to declare that this batch needs no speak / stay-silent decision:
+  the response is always `speak`, and the call is not billed. Use it in 1:1
+  chats where every inbound message is addressed to the agent and silence is
+  never the right answer.
+
+  The batch is still recorded and the turn is still advanced, so the returned
+  `turn_epoch` is valid for [`respond`](/api-reference/turn-taking/respond) as
+  usual. Sent per request — it is never sticky on the thread.
+</ParamField>
+
+```json Request theme={null}
+{
+  "thread_id": "b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+  "messages": [
+    {"sender": "casey", "content": "anyone around to look at the export bug?"}
+  ],
+  "system_prompt": "You are a concise, friendly support agent. Speak up when you can help; stay silent during side chatter."
+}
+```
+
+A 1:1 chat that always replies, with a screenshot attached — both short-circuits
+in one call:
+
+```json Request (short-circuited) theme={null}
+{
+  "thread_id": "b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+  "messages": [
+    {"sender": "casey", "content": "[image]", "has_media": true}
+  ],
+  "skip_decide": true
+}
+```
+
+## Response
+
+<ResponseField name="decision" type="string">
+  `speak` if the agent should reply now, or `stay_silent` if it should wait. On
+  `speak`, call [`respond`](/api-reference/turn-taking/respond); on
+  `stay_silent`, do nothing and wait for the next inbound message.
+</ResponseField>
+
+<ResponseField name="turn_epoch" type="integer">
+  The thread's current turn. Pass it back in the matching `respond` so a reply
+  drafted against stale context is dropped. See
+  [Interruptions and `turn_epoch`](/api-reference/turn-taking/overview#interruptions-and-turn_epoch).
+</ResponseField>
+
+<ResponseField name="tags" type="string[]">
+  Behavioural tags for this batch (for example `["fast", "comeback"]`). Empty
+  unless the thread enables
+  [behavioural signals](/api-reference/turn-taking/overview#behavioural-signals).
+</ResponseField>
+
+<ResponseField name="recalled_context" type="string">
+  What the agent remembers about the people in this conversation, as a short
+  prose block — recalled once for this turn. Empty unless the thread enables
+  [social memory](/api-reference/turn-taking/overview#social-memory) and the
+  memory bank has history. Reuse it when you draft the reply, and fold it into
+  the `system_prompt` you pass to
+  [`respond`](/api-reference/turn-taking/respond) so the whole reply path shares
+  the same context without a second lookup.
+</ResponseField>
+
+```json 200 OK theme={null}
+{
+  "decision": "speak",
+  "turn_epoch": 7,
+  "tags": ["comeback"],
+  "recalled_context": "Dana has hit this sync issue before and prefers direct, no-fluff answers."
+}
+```
+
+## Errors
+
+| Status | Code               | When                                                                               |
+| ------ | ------------------ | ---------------------------------------------------------------------------------- |
+| `401`  | `UNAUTHORIZED`     | The bearer token is missing, invalid, or expired.                                  |
+| `402`  | `PAYMENT_REQUIRED` | Your account can't cover this request. You are not charged.                        |
+| `403`  | `forbidden`        | The token is valid but not allowed here.                                           |
+| `422`  | `VALIDATION_ERROR` | The body is malformed, `messages` is empty or over 20, or a field is out of range. |
+| `502`  | `UPSTREAM_ERROR`   | A dependency the request relies on was unavailable. Retry with backoff.            |
+
+See [Errors](/api-reference/errors) for the envelope shape.
+
+## Example
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  curl https://api.humalike.com/v1/turn-taking/actions/submit_messages \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "thread_id": "b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+      "messages": [
+        {"sender": "casey", "content": "anyone around to look at the export bug?"}
+      ]
+    }'
+  ```
+
+  ```python Python theme={null}
+  import os
+  import httpx
+
+  resp = httpx.post(
+      "https://api.humalike.com/v1/turn-taking/actions/submit_messages",
+      headers={"Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}"},
+      json={
+          "thread_id": "b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+          "messages": [
+              {"sender": "casey", "content": "anyone around to look at the export bug?"},
+          ],
+      },
+  )
+  resp.raise_for_status()
+  result = resp.json()
+  if result["decision"] == "speak":
+      # Draft a reply, then call respond with result["turn_epoch"].
+      print("agent should reply; turn_epoch =", result["turn_epoch"])
+  ```
+
+  ```typescript TypeScript theme={null}
+  const res = await fetch("https://api.humalike.com/v1/turn-taking/actions/submit_messages", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      thread_id: "b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+      messages: [{ sender: "casey", content: "anyone around to look at the export bug?" }],
+    }),
+  });
+  if (!res.ok) throw new Error(`submit_messages failed: ${res.status}`);
+  const { decision, turn_epoch } = await res.json();
+  // If decision === "speak", draft a reply and call respond with turn_epoch.
+  ```
+</CodeGroup>
+
+## Next
+
+* [Respond](/api-reference/turn-taking/respond) — submit the agent's reply when the decision is `speak`.

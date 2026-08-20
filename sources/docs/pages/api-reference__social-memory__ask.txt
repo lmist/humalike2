@@ -1,0 +1,116 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Ask
+
+> Answer a natural-language question over a scope's transcript.
+
+```http theme={null}
+POST https://api.humalike.com/v1/social-memory/actions/ask
+```
+
+Answer an explicit, natural-language question over a scope. Use `ask` when
+you want a direct answer about the people in the conversation
+(*"what is Alice allergic to?"*), not the per-turn context that
+[`recall`](/api-reference/social-memory/recall) returns.
+
+This is a billable read over the scope's conversation; see
+[What a read sees](/api-reference/social-memory/overview#what-a-read-sees).
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Request body
+
+<ParamField body="scope_id" type="string" required>
+  Which scope to ask over. 1–255 characters. See
+  [Scopes](/api-reference/social-memory/overview#scopes).
+</ParamField>
+
+<ParamField body="question" type="string" required>
+  The natural-language question to answer. Non-empty.
+</ParamField>
+
+```json Request theme={null}
+{
+  "scope_id": "team-chat-1",
+  "question": "what is alice allergic to?"
+}
+```
+
+## Response
+
+<ResponseField name="answer" type="string">
+  The answer to your question, grounded in the scope's conversation.
+  Empty (`""`) when the scope has no stored messages yet.
+</ResponseField>
+
+```json 200 OK theme={null}
+{
+  "answer": "Alice has said she cannot touch peanuts."
+}
+```
+
+## Errors
+
+| Status | Code               | When                                                                                                  |
+| ------ | ------------------ | ----------------------------------------------------------------------------------------------------- |
+| `400`  | `VALIDATION_ERROR` | The request could not be processed, or `question` is too large for a single call — shorten and retry. |
+| `401`  | `UNAUTHORIZED`     | The bearer token is missing, invalid, or expired.                                                     |
+| `402`  | `PAYMENT_REQUIRED` | Your account does not have enough credits to cover this request. You are not charged.                 |
+| `403`  | `forbidden`        | The token is valid but not allowed here.                                                              |
+| `422`  | `VALIDATION_ERROR` | The body is malformed (missing `scope_id`, empty `question`, etc.).                                   |
+| `502`  | `UPSTREAM_ERROR`   | A dependency the request relies on was unavailable. Retry with backoff.                               |
+
+See [Errors](/api-reference/errors) for the full envelope shape.
+
+## Example
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  curl https://api.humalike.com/v1/social-memory/actions/ask \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "scope_id": "team-chat-1",
+      "question": "what is alice allergic to?"
+    }'
+  ```
+
+  ```python Python theme={null}
+  import os
+  import httpx
+
+  resp = httpx.post(
+      "https://api.humalike.com/v1/social-memory/actions/ask",
+      headers={"Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}"},
+      json={
+          "scope_id": "team-chat-1",
+          "question": "what is alice allergic to?",
+      },
+  )
+  resp.raise_for_status()
+  print(resp.json()["answer"])
+  ```
+
+  ```typescript TypeScript theme={null}
+  const res = await fetch("https://api.humalike.com/v1/social-memory/actions/ask", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      scope_id: "team-chat-1",
+      question: "what is alice allergic to?",
+    }),
+  });
+
+  const data = await res.json();
+  console.log(data.answer);
+  ```
+</CodeGroup>

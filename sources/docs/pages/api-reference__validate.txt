@@ -1,0 +1,393 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Validate personas
+
+> Check personas against schema and consistency gates, with batch fidelity.
+
+```http theme={null}
+POST https://api.humalike.com/v1/personas/actions/validate
+```
+
+Check one or more personas against deterministic quality **gates** and get back a
+structured report. Each persona is run through a **schema** gate (every field the
+blueprint declares is present and well-formed) and the blueprint's **constraint**
+gates (the consistency rules a believable member must satisfy, for example that
+age is at least six years past the year they started). When you send more than one
+persona, the report also includes batch-level checks — a diversity summary and
+per-field marginal fidelity.
+
+Pass a `blueprint` to check personas against the exact field set and consistency
+rules they were generated from. Omit it to run the structural checks alone.
+
+Use this to quality-check personas you have — your own, or the personas returned
+by [Personas](/api-reference/personas) and [Enhance](/api-reference/enhance).
+
+This endpoint is **asynchronous**, in the same shape as
+[Personas](/api-reference/personas): the `POST` returns `200 OK` with an
+`id`, and you `GET` the evaluation repository route until the report is ready.
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Request body
+
+<ParamField body="personas" type="object[]" required>
+  The personas to check. Each entry is a persona in the shape returned by
+  [Personas](/api-reference/personas#the-population): `persona_id`, a flat `fields`
+  map, `system_prompt`, and `markdown`. Must contain at least one persona.
+</ParamField>
+
+<ParamField body="blueprint" type="object">
+  Optional. The [population blueprint](/api-reference/personas#the-population) the
+  personas were generated from. When present, personas are checked against its
+  field set, its `ordered_values`, and its `constraints`, and marginal fidelity is
+  scored against its declared distributions.
+</ParamField>
+
+```json Request theme={null}
+{
+  "personas": [
+    {
+      "persona_id": "p_01",
+      "fields": {
+        "region": "KR",
+        "rank": "Diamond",
+        "main_role": "jungle",
+        "hours_per_week": "34",
+        "name": "Mara 'Nocturne' Velez",
+        "backstory": "Picked up jungle one long winter and never stopped counting wards."
+      },
+      "system_prompt": "You are Mara 'Nocturne' Velez, a late-night Diamond jungle main...",
+      "markdown": "# Mara 'Nocturne' Velez\n\n_Late-night Diamond jungle main..._"
+    }
+  ],
+  "blueprint": {
+    "domain": "lol_player",
+    "order": ["region", "rank", "main_role", "hours_per_week"],
+    "fields": [
+      { "name": "region", "kind": "categorical", "parents": [], "categorical": { "weights": { "NA": 0.5, "KR": 0.5 } } },
+      { "name": "rank", "kind": "categorical", "parents": [], "categorical": { "weights": { "Gold": 0.6, "Diamond": 0.4 } }, "ordered_values": ["Gold", "Diamond"] }
+    ],
+    "constraints": [
+      { "name": "hours_nonneg", "lhs": "hours_per_week", "op": ">=", "rhs": "0" }
+    ]
+  }
+}
+```
+
+## Start an evaluation
+
+The `POST` returns `200 OK` with an `id` used with the evaluation repository route.
+
+<ResponseField name="id" type="string">
+  The evaluation's identifier. Use it to poll for the report.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Always `pending` in this response — the evaluation has been accepted and queued.
+</ResponseField>
+
+```json 200 OK theme={null}
+{
+  "id": "5b91c0a3-f2aa-4fe1-9f2e-59f6a8a05801",
+  "status": "pending"
+}
+```
+
+<Note>
+  The gates run deterministically over the personas you send and make no
+  generation calls, so an evaluation finishes quickly — but it is still
+  asynchronous and polled by `id`, the same as
+  [population generation](/api-reference/personas).
+  A constraint that references a field that is missing or not numeric is reported
+  as not applicable rather than failing.
+</Note>
+
+## Poll for the report
+
+```http theme={null}
+GET https://api.humalike.com/v1/personas/repositories/Evaluation/by-id/{id}
+```
+
+Call `GET` with the returned id until `status` is `succeeded` or `failed`.
+
+<ResponseField name="id" type="string">
+  The evaluation's identifier, the same value you started.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Where the evaluation is in its lifecycle. One of `pending`, `running`,
+  `succeeded`, or `failed`. Keep polling on `pending` and `running`; stop on
+  `succeeded` and `failed`.
+</ResponseField>
+
+<ResponseField name="result" type="object">
+  The evaluation **report**, present only when `status` is `succeeded`. Its shape
+  is described under [The report](#the-report) below.
+</ResponseField>
+
+<ResponseField name="error" type="string">
+  A stable failure category such as `provider_error`. Present only when `status`
+  is `failed`.
+</ResponseField>
+
+<Note>
+  A `succeeded` evaluation means the gates ran to completion — it does **not** mean
+  the personas passed. Read `result.passed` for the quality verdict. A `failed`
+  status means the evaluation itself could not run (for example a malformed
+  request body), not that a persona failed a gate.
+</Note>
+
+## The report
+
+When `status` is `succeeded`, the poll carries the report under `result`.
+
+<ResponseField name="passed" type="boolean">
+  The overall verdict: `true` only when every gate on every persona and every
+  batch-level gate passed.
+</ResponseField>
+
+<ResponseField name="gates" type="object[]">
+  Batch-level gates not tied to a single persona — for example a diversity floor
+  or a marginal-fidelity check across the whole set.
+
+  <Expandable title="gate">
+    <ResponseField name="name" type="string">
+      The gate's identifier.
+    </ResponseField>
+
+    <ResponseField name="passed" type="boolean">
+      Whether this gate passed.
+    </ResponseField>
+
+    <ResponseField name="score" type="number">
+      The gate's continuous measurement when it has one; `null` for purely boolean
+      gates.
+    </ResponseField>
+
+    <ResponseField name="detail" type="string">
+      A short explanation of the outcome.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="scorecards" type="object[]">
+  One scorecard per input persona.
+
+  <Expandable title="scorecard">
+    <ResponseField name="persona_id" type="string">
+      The persona this scorecard belongs to.
+    </ResponseField>
+
+    <ResponseField name="gates" type="object[]">
+      Per-persona gate results — the schema gate and one entry per blueprint
+      constraint — each with `name`, `passed`, `score`, and `detail`. A constraint
+      that is not applicable to this persona is reported with `passed: true` and a
+      `detail` saying so.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="diversity" type="object">
+  How varied the set is, in the same shape as the population
+  [diversity report](/api-reference/personas#the-population). Present for
+  multi-persona inputs.
+</ResponseField>
+
+<ResponseField name="marginals" type="object[]">
+  Per-field marginal fidelity, in the same shape as the population
+  [marginals](/api-reference/personas#the-population). Present when a `blueprint`
+  is supplied and the input holds more than one persona.
+</ResponseField>
+
+When the evaluation succeeds, this report is the value of `result`:
+
+```json 200 OK (succeeded) theme={null}
+{
+  "id": "5b91c0a3-f2aa-4fe1-9f2e-59f6a8a05801",
+  "status": "succeeded",
+  "result": {
+    "passed": true,
+    "gates": [
+      { "name": "diversity_floor", "passed": true, "score": 0.19, "detail": "mean similarity below threshold" }
+    ],
+    "scorecards": [
+      {
+        "persona_id": "p_01",
+        "gates": [
+          { "name": "schema", "passed": true, "score": null, "detail": "all blueprint fields present" },
+          { "name": "hours_nonneg", "passed": true, "score": null, "detail": "hours_per_week=34 >= 0 (0)" }
+        ]
+      }
+    ],
+    "diversity": {
+      "max_pairwise_similarity": 0.41,
+      "mean_pairwise_similarity": 0.19,
+      "duplicate_pairs": 0
+    }
+  }
+}
+```
+
+When a persona fails a gate, the evaluation still `succeeded` — `result.passed` is
+`false` and the failing gate carries a `detail` explaining why:
+
+```json 200 OK (persona failed a gate) theme={null}
+{
+  "id": "5b91c0a3-f2aa-4fe1-9f2e-59f6a8a05801",
+  "status": "succeeded",
+  "result": {
+    "passed": false,
+    "gates": [],
+    "scorecards": [
+      {
+        "persona_id": "p_02",
+        "gates": [
+          { "name": "schema", "passed": true, "score": null, "detail": "all blueprint fields present" },
+          { "name": "hours_nonneg", "passed": false, "score": null, "detail": "hours_per_week=-3 >= 0 (0)" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+A succeeded evaluation with `result.passed: false` is a successful run reporting a
+quality failure; inspect each `scorecards[].gates` entry and the batch `gates` for
+the ones whose `passed` is `false`.
+
+## When the evaluation fails
+
+If the evaluation itself cannot run — for example a malformed request body — the
+poll returns `200 OK` with `status: "failed"` and an `error` instead of a
+`result`:
+
+```json 200 OK (failed) theme={null}
+{
+  "id": "5b91c0a3-f2aa-4fe1-9f2e-59f6a8a05801",
+  "status": "failed",
+  "error": "provider_error"
+}
+```
+
+Branch on the poll's `status` and `error`, not on the HTTP status of the
+poll — a failed evaluation is reported with `200 OK`. A persona failing a gate is
+**not** a failed evaluation; that is a `succeeded` evaluation with
+`result.passed: false` (see above).
+
+## Errors
+
+The `POST` rejects a bad request before any evaluation starts:
+
+| Status | Code                | When                                                                                          |
+| ------ | ------------------- | --------------------------------------------------------------------------------------------- |
+| `401`  | `UNAUTHORIZED`      | The bearer token is missing, invalid, or expired.                                             |
+| `402`  | `PAYMENT_REQUIRED`  | Your credit balance can't cover the request. See [Credits and billing](/credits-and-billing). |
+| `422`  | `validation_failed` | `personas` is missing, empty, or a persona is malformed.                                      |
+
+See [Errors](/api-reference/errors) for the full envelope shape.
+
+## Example
+
+Start the evaluation, poll its repository route until it succeeds, then read the report
+from `result`.
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  # Start the evaluation — returns 200 with an id.
+  curl https://api.humalike.com/v1/personas/actions/validate \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d @population.json
+
+  # Poll the evaluation (repeat until status is "succeeded" or "failed").
+  curl https://api.humalike.com/v1/personas/repositories/Evaluation/by-id/5b91c0a3-f2aa-4fe1-9f2e-59f6a8a05801 \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN"
+  ```
+
+  ```python Python theme={null}
+  import os
+  import time
+
+  import httpx
+
+  headers = {"Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}"}
+
+  start = httpx.post(
+      "https://api.humalike.com/v1/personas/actions/validate",
+      headers=headers,
+      json={"personas": personas, "blueprint": blueprint},
+  )
+  start.raise_for_status()  # 200 OK
+  evaluation_id = start.json()["id"]
+  poll_url = f"https://api.humalike.com/v1/personas/repositories/Evaluation/by-id/{evaluation_id}"
+
+  while True:
+      poll = httpx.get(poll_url, headers=headers)
+      poll.raise_for_status()
+      evaluation = poll.json()
+      if evaluation["status"] in ("succeeded", "failed"):
+          break
+      time.sleep(2)
+
+  if evaluation["status"] == "failed":
+      err = evaluation["error"]
+      raise RuntimeError(f"{err['code']}: {err['message']}")
+
+  report = evaluation["result"]
+  if not report["passed"]:
+      for card in report["scorecards"]:
+          failed = [g["name"] for g in card["gates"] if not g["passed"]]
+          if failed:
+              print(card["persona_id"], "failed:", failed)
+  ```
+
+  ```typescript TypeScript theme={null}
+  const headers = {
+    Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}`,
+    "Content-Type": "application/json",
+  };
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  const start = await fetch("https://api.humalike.com/v1/personas/actions/validate", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ personas, blueprint }),
+  });
+  if (start.status !== 200) throw new Error(`start failed: ${start.status}`);
+  const evaluationId = (await start.json()).id;
+  const pollUrl = `https://api.humalike.com/v1/personas/repositories/Evaluation/by-id/${evaluationId}`;
+
+  let evaluation;
+  for (;;) {
+    const poll = await fetch(pollUrl, { headers });
+    if (!poll.ok) throw new Error(`poll failed: ${poll.status}`);
+    evaluation = await poll.json();
+    if (evaluation.status === "succeeded" || evaluation.status === "failed") break;
+    await sleep(2000);
+  }
+
+  if (evaluation.status === "failed") {
+    throw new Error(evaluation.error);
+  }
+
+  const report = evaluation.result;
+  if (!report.passed) {
+    for (const card of report.scorecards) {
+      const failed = card.gates.filter((g) => !g.passed).map((g) => g.name);
+      if (failed.length) console.log(card.persona_id, "failed:", failed);
+    }
+  }
+  ```
+</CodeGroup>
+
+## Next
+
+* [Personas](/api-reference/personas) — generate a population to validate.
+* [Enhance a persona](/api-reference/enhance) — improve a persona, then re-validate it.
+* [Errors](/api-reference/errors) — the full error model and how to recover.

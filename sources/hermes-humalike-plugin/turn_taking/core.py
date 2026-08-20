@@ -1,0 +1,251 @@
+"""Turn-taking logic — persona, the decide gate, naturalize, observed-context.
+
+The platform-agnostic heart: given inbound events it decides speak/stay_silent
+and stashes the epoch (decide), and given a finished draft it ships it for
+naturalization (respond). No monkeypatching here — it talks to ``service`` (wire
+calls), ``delivery`` (thread lifecycle), and ``state`` (the epoch/session maps).
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from typing import Any, Dict, Optional
+
+from . import state
+from .. import social_learning
+from .delivery import _ensure_thread
+from .service import _hermes_config, _to_messages, respond, submit_messages
+
+_log = logging.getLogger(__name__)
+
+
+def _build_system_prompt_for_turn_taking(adapter: Any = None, session_id: Optional[str] = None) -> Optional[str]:
+    """The bot's voice/style/personality, passed to the service so decide/
+    naturalize/foresee speak in the bot's voice.
+
+    Only the persona parts of Hermes' system prompt — never tool/skill schemas:
+    ``SOUL.md`` (static personality) plus the social-learning voice card (the
+    live per-session voice). Falls back to the gateway live value (runtime
+    ``/personality`` change), ``HERMES_EPHEMERAL_SYSTEM_PROMPT``, or
+    ``agent.system_prompt`` in ~/.hermes/config.yaml. None when unset (generic).
+    """
+    # Voice/style/personality only: SOUL.md + the live voice card. Both are small
+    # persona text (no tool/skill schemas), so they stay under the service's
+    # agent_instructions cap. ponytail: SOUL.md read straight off disk like
+    # _HERMES_CONFIG; the card is read in-process from the social-learning plugin
+    # (both plugins share the one gateway process) — coupled to its _CACHE name,
+    # silently skipped if it moves.
+    parts: list[str] = []
+    try:
+        soul = _hermes_config().with_name("SOUL.md").read_text().strip()
+        if soul:
+            parts.append(soul)
+    except Exception:
+        pass
+    if session_id:
+        try:
+            # Embedded social-learning module (same gateway process, same cache
+            # the pre_llm_call hook fills) — no cross-plugin import.
+            card = social_learning.get_card(session_id)
+            if card:
+                parts.append(card)
+        except Exception:
+            pass
+    if parts:
+        return "\n\n".join(parts)
+    try:
+        gw = getattr(getattr(adapter, "_message_handler", None), "__self__", None)
+        live = getattr(gw, "_ephemeral_system_prompt", None)
+        if live:
+            return live
+    except Exception:
+        pass
+    env = os.getenv("HERMES_EPHEMERAL_SYSTEM_PROMPT", "")
+    if env:
+        return env
+    try:
+        import yaml
+
+        cfg = yaml.safe_load(_hermes_config().read_text()) or {}
+        return str((cfg.get("agent") or {}).get("system_prompt", "")).strip() or None
+    except Exception:
+        return None
+
+
+DEFAULT_AGENT_NAME = "Hermes"
+
+
+def _agent_name() -> str:
+    """The bot's display name (``HERMES_AGENT_NAME``, then ``agent.name`` in
+    ~/.hermes/config.yaml, then "Hermes"), passed to the service so the
+    theory-of-mind call labels the bot's own transcript lines with its real
+    name instead of the internal ``agent`` label. When the persona says "You
+    are Hermes" but the transcript says ``agent``, the small ToM model can
+    lose track of which speaker it is (third-person replies, replying to
+    itself). The default matches the product name — right for every install
+    that didn't rename the bot; set agent.name when yours did."""
+    env = os.getenv("HERMES_AGENT_NAME", "").strip()
+    if env:
+        return env
+    try:
+        import yaml
+
+        cfg = yaml.safe_load(_hermes_config().read_text()) or {}
+        return str((cfg.get("agent") or {}).get("name", "")).strip() or DEFAULT_AGENT_NAME
+    except Exception:
+        return DEFAULT_AGENT_NAME
+
+
+def _delivery_meta(event: Any) -> Dict[str, str]:
+    """Opaque per-turn delivery hints to round-trip through respond → bubble.
+
+    Currently just the forum-topic id: Telegram sets ``source.thread_id`` for forum
+    topics (and the General-topic sentinel), and its ``send`` places a bubble in a
+    topic via ``metadata["thread_id"]``. Empty for non-topic chats and WhatsApp
+    groups (no ``thread_id``), so delivery is unchanged there.
+    """
+    tid = getattr(getattr(event, "source", None), "thread_id", None)
+    return {"thread_id": str(tid)} if tid else {}
+
+
+# ── Decide gate: submit a batch, decide, stash the speak epoch ────────────────
+async def _decide(
+    session_id: str,
+    adapter: Any,
+    chat_id: str,
+    messages: list[Dict[str, str]],
+    system_prompt: Optional[str] = None,
+    message_id: str = "",
+    delivery_meta: Optional[Dict[str, str]] = None,
+) -> Optional[str]:
+    """Submit a batch and return the decision ("speak" / "stay_silent").
+
+    On "speak" the epoch is stashed in ``state.EPOCH_BY_MESSAGE_ID[message_id]`` so
+    the later ``respond`` for THIS turn can carry its own epoch (fail-closed).
+    Returns None when turn-taking is unavailable (no thread / service error) —
+    caller then behaves as if turn-taking is off (let Hermes reply normally).
+    """
+    tid = await _ensure_thread(session_id, adapter, chat_id)
+    if not tid:
+        state.MEMORY_BY_SESSION.pop(session_id, None)  # no stale recall into fail-open replies
+        return None
+    res = await submit_messages(tid, messages, system_prompt)
+    if not res:
+        state.MEMORY_BY_SESSION.pop(session_id, None)
+        return None
+    decision = res.get("decision")
+    epoch = res.get("turn_epoch")
+    # Reuse this one recall for the reply: the draft (pre_llm_call hook) and the
+    # respond system_prompt both read it. "" when memory is off/empty or the API
+    # returns no recalled_context — then injection simply no-ops.
+    state.MEMORY_BY_SESSION[session_id] = res.get("recalled_context") or ""
+    if decision == "speak" and message_id:
+        # ponytail: no message_id → can't correlate at respond time, so don't stash;
+        # the turn then degrades to a plain (un-naturalized) reply rather than risk a
+        # mismatched epoch. WhatsApp always carries one, so this is the rare path.
+        state.EPOCH_BY_MESSAGE_ID[message_id] = epoch
+        if delivery_meta:
+            state.META_BY_MESSAGE_ID[message_id] = delivery_meta
+    if epoch is not None:
+        # Unconditional (also on stay_silent): every submit bumps the service's
+        # epoch, so this mirrors the server's CURRENT epoch — exactly what a
+        # merged turn's respond must claim, regardless of the decision that
+        # accompanied the newest message.
+        state.LATEST_EPOCH_BY_CHAT[str(chat_id)] = epoch
+    # ponytail: size-cap the per-message maps (entries for merged-away messages
+    # are never popped). FIFO eviction is blind to liveness — a still-running
+    # turn's entry could be evicted — so the cap is set far above any plausible
+    # number of decides during one turn (minutes-long tool turns included).
+    for _m in (state.EPOCH_BY_MESSAGE_ID, state.META_BY_MESSAGE_ID, state.LATEST_EPOCH_BY_CHAT):
+        while len(_m) > 4096:
+            _m.pop(next(iter(_m)))
+    _log.info("tt decide: session=%s chat=%s mid=%s decision=%s epoch=%s",
+              session_id, chat_id, message_id, decision, epoch)
+    return decision
+
+
+# ── Respond side: naturalize a draft, carry this turn's epoch ──────────────────
+async def _respond(
+    session_id: str, draft: str, epoch: Optional[int], system_prompt: Optional[str] = None,
+    metadata: Optional[Dict[str, str]] = None,
+) -> bool:
+    """Naturalize a completed draft using THIS turn's epoch (resolved by the
+    transform hook from the per-turn message_id) and call respond. In WS mode the
+    bubbles are delivered by the receive loop, so nothing is returned for
+    sending — the bool just says whether a reply was scheduled:
+
+    - True  → scheduled; bubbles will arrive over WS.
+    - False → never decided speak / superseded (newer batch won) / service error.
+    """
+    tid = state.SESSIONS.get(session_id)
+    if not tid or epoch is None:
+        _log.info("tt respond: session=%s → SKIP (no thread / no speak epoch)", session_id)
+        return False  # this session never decided speak
+    _log.info("tt respond: session=%s tid=%s epoch=%s → naturalizing | %r",
+              session_id, tid, epoch, (draft or "").strip()[:60])
+    res = await respond(tid, draft, epoch, system_prompt, metadata, agent_name=_agent_name())
+    if not res or res.get("superseded"):
+        _log.info("tt respond: session=%s → DROPPED (superseded=%s / no response)",
+                  session_id, bool(res and res.get("superseded")))
+        return False  # dropped: a newer batch arrived, or service error
+    _log.info("tt respond: session=%s → scheduled=%s (bubbles will arrive over WS)",
+              session_id, res.get("scheduled"))
+    return bool(res.get("scheduled"))
+
+
+# ── Inbound gate: stay_silent → keep context, don't reply ─────────────────────
+def _persist_observed(session_store: Any, session_id: str, events: list) -> None:
+    """Append inbound messages to Hermes history WITHOUT dispatching the agent.
+
+    Used on a stay_silent decision so a later "speak" turn still has the context
+    the bot stayed quiet on. ``observed: True`` marks the rows as context (they
+    replay as background, not as unanswered user turns). The ``[Name]`` prefix is
+    the Hermes-side authorship convention, so the agent knows who said what.
+    """
+    for ev in events:
+        text = (getattr(ev, "text", "") or "").strip()
+        if not text:
+            continue
+        name = getattr(getattr(ev, "source", None), "user_name", None)
+        entry = {"role": "user", "content": f"[{name}] {text}" if name else text, "observed": True}
+        mid = getattr(ev, "message_id", None)
+        if mid:
+            entry["message_id"] = str(mid)
+        try:
+            session_store.append_to_transcript(session_id, entry)
+        except Exception as e:
+            _log.warning("turn-taking: persist observed failed: %s", e)
+
+
+async def _inbound_gate(
+    adapter: Any,
+    session_store: Any,
+    session_id: str,
+    chat_id: str,
+    events: list,
+    system_prompt: Optional[str] = None,
+    message_id: str = "",
+) -> bool:
+    """Decide whether an inbound batch should reach the agent.
+
+    - "speak" or service unavailable (None) → return True: dispatch normally, and
+      Hermes persists the turn itself.
+    - "stay_silent" → persist the messages as observed context and return False:
+      the bot keeps quiet but remembers.
+    """
+    messages = _to_messages(events)
+    if not messages:
+        return True  # nothing to decide → let Hermes handle it
+    delivery_meta = _delivery_meta(events[-1]) if events else {}
+    decision = await _decide(
+        session_id, adapter, chat_id, messages, system_prompt, message_id, delivery_meta
+    )
+    if decision == "stay_silent":
+        _persist_observed(session_store, session_id, events)
+        _log.info("tt gate: session=%s chat=%s → STAY_SILENT (persisted %d observed msg(s), no dispatch)",
+                  session_id, chat_id, len(messages))
+        return False
+    _log.info("tt gate: session=%s chat=%s → PROCEED (decision=%s) → dispatch agent",
+              session_id, chat_id, decision)
+    return True  # speak, or None (fail-open: behave as if turn-taking is off)

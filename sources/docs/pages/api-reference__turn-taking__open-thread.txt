@@ -1,0 +1,206 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Open a thread
+
+> Start or re-open a chat thread and get a WebSocket URL for the agent's messages.
+
+```http theme={null}
+POST https://api.humalike.com/v1/turn-taking/actions/open_thread
+```
+
+Open a conversation. A thread is the unit of state for turn-taking; open one
+when the chat starts, then drive it with
+[`submit_messages`](/api-reference/turn-taking/submit-messages) and
+[`respond`](/api-reference/turn-taking/respond). The response includes a
+short-lived WebSocket URL you connect to in order to receive the agent's
+messages.
+
+Call this again with the same `thread_id` to **reconnect**: it re-issues a
+fresh WebSocket URL without creating a new thread. See
+[Threads](/api-reference/turn-taking/overview#threads).
+
+This call is not billable.
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Request body
+
+<ParamField body="thread_id" type="string">
+  Optional thread id (a UUID). Omit to open a fresh thread — a new id is minted
+  and returned. Pass an existing id to re-open that thread (the reconnect path).
+  Opening a thread you do not own reads as absent.
+</ParamField>
+
+<ParamField body="integrations" type="object">
+  Optional. Enables [behavioural signals](/api-reference/turn-taking/overview#behavioural-signals)
+  and/or [social memory](/api-reference/turn-taking/overview#social-memory) for
+  the thread. Set on create; updated on a re-open that supplies it; omitting it
+  leaves any existing configuration unchanged.
+
+  <Expandable title="integrations">
+    <ParamField body="social_signals" type="object">
+      Turns on behavioural tags and `turn_taking.signal` events for the thread.
+
+      <Expandable title="social_signals">
+        <ParamField body="channel_id" type="string">
+          Optional grouping id for the thread's behavioural tracking, up to 255
+          characters. Defaults to the thread id.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField body="social_memory" type="object">
+      Turns on **social memory** for the thread: the agent remembers what it
+      learns about the people in the conversation and gets that context back on
+      each decision. See [Social memory](/api-reference/turn-taking/overview#social-memory).
+
+      <Expandable title="social_memory">
+        <ParamField body="memory_bank_id" type="string">
+          Id of the memory bank this thread reads and writes, up to 255
+          characters. Threads that share a `memory_bank_id` share memory.
+          **Defaults to the thread id — memory isolated to this thread.** To let
+          one agent remember a person across all its channels, pass a stable
+          per-agent `memory_bank_id` (only you know what "the agent" is — an
+          account may run several). Never point distinct agents at one bank, or
+          their memories mix. (`scope_id` is accepted as a legacy alias.)
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+```json Request theme={null}
+{
+  "integrations": { "social_signals": {}, "social_memory": {} }
+}
+```
+
+## Response
+
+<ResponseField name="thread" type="object">
+  The opened thread.
+
+  <Expandable title="thread">
+    <ResponseField name="id" type="string">
+      The thread's id. Pass it to `submit_messages`, `respond`, `record_event`,
+      and to a later `open_thread` to reconnect.
+    </ResponseField>
+
+    <ResponseField name="user_id" type="string">
+      The account that owns the thread.
+    </ResponseField>
+
+    <ResponseField name="created_at" type="string">
+      When the thread was created (ISO 8601).
+    </ResponseField>
+
+    <ResponseField name="updated_at" type="string">
+      When the thread was last updated (ISO 8601).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="channel" type="string">
+  The thread's channel address, `turn-taking-thread/{thread_id}`. Events on the
+  WebSocket carry this as their `channel`.
+</ResponseField>
+
+<ResponseField name="realtime" type="object">
+  The grant for streaming the agent's messages.
+
+  <Expandable title="realtime">
+    <ResponseField name="connect_url" type="string">
+      A short-lived WebSocket URL. Open a WebSocket to it exactly as given. On
+      expiry or a dropped socket, re-open the thread to get a fresh one. See
+      [Receiving messages from the agent](/api-reference/turn-taking/overview#receiving-messages-from-the-agent).
+    </ResponseField>
+
+    <ResponseField name="expires_at" type="string">
+      When `connect_url` stops being valid for a new connection (ISO 8601).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json 200 OK theme={null}
+{
+  "thread": {
+    "id": "b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+    "user_id": "usr_a1b2c3",
+    "created_at": "2026-06-16T12:00:00Z",
+    "updated_at": "2026-06-16T12:00:00Z"
+  },
+  "channel": "turn-taking-thread/b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+  "realtime": {
+    "connect_url": "wss://api.humalike.com/v1/ws?c=9f8e7d6c5b4a3210...",
+    "expires_at": "2026-06-16T12:00:30Z"
+  }
+}
+```
+
+## Errors
+
+| Status | Code               | When                                                       |
+| ------ | ------------------ | ---------------------------------------------------------- |
+| `401`  | `UNAUTHORIZED`     | The bearer token is missing, invalid, or expired.          |
+| `422`  | `VALIDATION_ERROR` | `thread_id` is not a UUID, or `integrations` is malformed. |
+
+See [Errors](/api-reference/errors) for the envelope shape.
+
+## Example
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  curl https://api.humalike.com/v1/turn-taking/actions/open_thread \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"integrations": {"social_signals": {}}}'
+  ```
+
+  ```python Python theme={null}
+  import os
+  import httpx
+
+  resp = httpx.post(
+      "https://api.humalike.com/v1/turn-taking/actions/open_thread",
+      headers={"Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}"},
+      json={"integrations": {"social_signals": {}}},
+  )
+  resp.raise_for_status()
+  thread = resp.json()
+  thread_id = thread["thread"]["id"]
+  connect_url = thread["realtime"]["connect_url"]
+  # Open a WebSocket to connect_url to receive the agent's messages.
+  print(thread_id, connect_url)
+  ```
+
+  ```typescript TypeScript theme={null}
+  const res = await fetch("https://api.humalike.com/v1/turn-taking/actions/open_thread", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ integrations: { social_signals: {} } }),
+  });
+  if (!res.ok) throw new Error(`open_thread failed: ${res.status}`);
+  const { thread, realtime } = await res.json();
+
+  const socket = new WebSocket(realtime.connect_url);
+  socket.onmessage = (event) => {
+    const envelope = JSON.parse(event.data);
+    if (envelope.type === "turn_taking.message") {
+      console.log(envelope.data.position, envelope.data.content);
+    }
+  };
+  ```
+</CodeGroup>
+
+## Next
+
+* [Submit messages](/api-reference/turn-taking/submit-messages) — feed inbound messages and get a decision.

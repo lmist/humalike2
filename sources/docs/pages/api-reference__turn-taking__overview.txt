@@ -1,0 +1,238 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Turn-taking
+
+> Give an agent human-like timing in a live chat: when to speak, and a reply paced out like a real person typing.
+
+The Turn-taking API runs the **timing** of an agent in a live chat so it behaves
+like a person rather than a request/response bot. You feed it the messages as
+they arrive; it decides **whether the agent should speak now or stay silent**,
+and when the agent does reply, it paces that reply out as **1–5 short messages
+delivered a beat apart** — with a typing indicator — over a WebSocket.
+
+You drive it with three calls per conversation and listen on one WebSocket:
+
+1. [`open_thread`](/api-reference/turn-taking/open-thread) — start (or re-open) a
+   chat thread and get a `connect_url` to stream the agent's messages.
+2. [`submit_messages`](/api-reference/turn-taking/submit-messages) — hand it each
+   batch of inbound messages; it returns a `speak` / `stay_silent` decision.
+3. [`respond`](/api-reference/turn-taking/respond) — when the decision is
+   `speak`, submit your agent's drafted reply; it is paced out and delivered on
+   the thread's WebSocket.
+
+[`record_event`](/api-reference/turn-taking/record-event) is an optional fourth
+call for reporting non-message activity (a user starts or stops typing, edits a
+message). To verify your token before sending any traffic, see
+[`whoami`](/api-reference/whoami).
+
+Turn-taking is a **per-message** API: `submit_messages` on every inbound message,
+`respond` on every reply. That is the opposite of components like
+[`extract`](/api-reference/extract) and [`analyze`](/api-reference/analyze),
+which belong on a slow clock. See
+[When to call each API](/calling-patterns) for how the pieces fit together.
+
+## The integration loop
+
+A typical client wires turn-taking into a chat UI like this:
+
+1. **Open a thread** when the conversation starts. Keep the returned
+   `thread.id`, and open a WebSocket to `realtime.connect_url`.
+2. **Stream the agent's messages** from that WebSocket for the life of the
+   thread (see [Receiving messages from the agent](#receiving-messages-from-the-agent)).
+3. On every inbound human message (or small batch), **call `submit_messages`**.
+   Keep the `turn_epoch` it returns.
+4. If the decision is **`stay_silent`**, do nothing — wait for the next inbound
+   message. If it is **`speak`**, have your agent draft a reply and **call
+   `respond`** with that draft and the `turn_epoch` from step 3.
+5. The reply is paced into chat messages and **pushed to you over the
+   WebSocket** — render them as they arrive. Repeat from step 3.
+
+```text theme={null}
+ inbound messages ──▶ submit_messages ──▶ decision
+                                            │
+                          stay_silent ◀─────┴─────▶ speak
+                                                      │
+                              your agent drafts a reply
+                                                      │
+                                                  respond
+                                                      │
+            paced agent messages  ◀── WebSocket ──────┘
+```
+
+## Threads
+
+A **thread** is one conversation and the unit of state. Open it once with
+[`open_thread`](/api-reference/turn-taking/open-thread):
+
+* Omit `thread_id` to start a fresh thread — a new id is minted and returned.
+* Pass a `thread_id` to **re-open** a specific thread. The id is an idempotency
+  key: opening an id that doesn't exist creates it; opening one that does
+  re-issues its `connect_url` **without** creating a duplicate (this is the
+  reconnect path). Opening a thread you don't own reads as absent.
+
+Threads are **owner-scoped**: they belong to the account whose token opened
+them, and another account cannot open or read them.
+
+## Receiving messages from the agent
+
+`open_thread` returns a `realtime` grant with a short-lived `connect_url`. Open
+a WebSocket to that URL **exactly as given** — it already carries everything
+needed to attach to the thread's channel:
+
+```javascript theme={null}
+const socket = new WebSocket(thread.realtime.connect_url);
+socket.onmessage = (event) => {
+  const envelope = JSON.parse(event.data);
+  // handle envelope.type
+};
+```
+
+Each frame is a JSON **envelope**:
+
+<ResponseField name="id" type="string">
+  A unique id for this delivery.
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  The event type — one of the events below.
+</ResponseField>
+
+<ResponseField name="channel" type="string">
+  The thread channel the event belongs to, `turn-taking-thread/{thread_id}`.
+</ResponseField>
+
+<ResponseField name="ts" type="string">
+  When the event was emitted (ISO 8601).
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  The event payload, shaped by `type` (see below).
+</ResponseField>
+
+The thread channel carries three event types:
+
+| `type`                | When                                                                                                                                                                               | `data`                                                            |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `turn_taking.message` | One naturalized chat message from the agent. A single `respond` emits 1–5 of these, a beat apart.                                                                                  | `{ message_id, thread_id, content, position, sent_at, metadata }` |
+| `turn_taking.typing`  | The agent's "… is typing" indicator toggled. Render it directly.                                                                                                                   | `{ thread_id, typing }`                                           |
+| `turn_taking.signal`  | A behavioural signal about a person in the thread (for example a long silence, or typing without sending). Only sent when [behavioural signals](#behavioural-signals) are enabled. | `{ thread_id, user_id, kind }`                                    |
+
+`turn_taking.message.position` is the message's 0-based order within the reply,
+so you can render a multi-message reply in sequence.
+
+`turn_taking.message.metadata` is the opaque object you passed as `metadata` on
+the [`respond`](/api-reference/turn-taking/respond) that produced the reply,
+echoed back verbatim. It is identical on every message of that reply, and
+`null` when you sent none.
+
+<Note>
+  The `connect_url` is short-lived. If the socket drops or the URL expires,
+  **re-open the thread** with its `thread_id`
+  ([`open_thread`](/api-reference/turn-taking/open-thread)) to get a fresh
+  `connect_url`, then reconnect. Re-opening does not create a new thread or lose
+  state.
+</Note>
+
+## Interruptions and `turn_epoch`
+
+People talk over each other, and so do real users. Every `submit_messages`
+returns a `turn_epoch` — a counter for the thread's current turn. You pass that
+same `turn_epoch` back in the matching `respond`.
+
+If a newer batch of messages arrives (a higher `turn_epoch`) before your draft
+is submitted, the conversation has moved on and your reply is stale. `respond`
+detects this, **schedules nothing, bills nothing**, and returns
+`superseded: true`. Draft against the latest decision and submit promptly.
+
+## Behavioural signals
+
+When you open a thread you can enable **behavioural signals** by sending an
+`integrations.social_signals` block. With it on, turn-taking watches the timing
+of the conversation and surfaces two extra things:
+
+* **Per-batch `tags`** on the `submit_messages` response — short behavioural
+  labels for the messages in that batch (for example `["fast", "comeback"]`).
+* **`turn_taking.signal` events** on the WebSocket for activity that isn't a
+  message (for example a user going silent, or typing without sending).
+
+These signals also inform the speak/stay-silent decision. To feed them, report
+typing and edits with
+[`record_event`](/api-reference/turn-taking/record-event), and pass `client_ts`
+on inbound messages so timing is measured from the client clock. Without the
+`integrations.social_signals` block, turn-taking runs standalone: `tags` is
+always empty and no `turn_taking.signal` events are sent.
+
+## Social memory
+
+When you open a thread you can enable **social memory** by sending an
+`integrations.social_memory` block. With it on, the agent remembers what it
+learns about the people in the conversation across turns, and each
+`submit_messages` response carries a `recalled_context` field: a short prose
+block of what the agent knows about the people involved in the current message —
+their preferences, history, and situation — ready to inject into a reply.
+
+Memory is written and read automatically as part of the decision, so there is no
+separate call to make. The context is recalled **once** per turn and handed back
+to you. Reuse that single value everywhere the reply is shaped:
+
+* **Your own draft** — prepend `recalled_context` to the prompt your agent uses
+  to write the reply, so the reply is grounded in what you know about the person.
+* **`respond`** — fold `recalled_context` into the `system_prompt` you pass to
+  [`respond`](/api-reference/turn-taking/respond). That same `system_prompt`
+  reaches the reply-refinement step, so the whole reply path stays consistent
+  without a second lookup.
+
+`recalled_context` is empty until the memory bank has history to draw on, and on
+a `stay_silent` decision you can simply ignore it. Enabling social memory adds a
+memory read to the billable decision call.
+
+By default each thread has its **own** memory bank (isolated to that thread) —
+the service never merges banks by guessing, because only you know what "the
+agent" is (an account may run several). To let one agent remember a person
+**across all its channels**, open its threads with the same stable
+`memory_bank_id`. Keep distinct agents on distinct bank ids so their memories
+never mix.
+
+## Authentication
+
+Every request authenticates with a bearer token. See
+[Authentication](/authentication).
+
+```
+Authorization: Bearer <token>
+```
+
+## Billing
+
+`submit_messages` (the decision) and `respond` (the reply) are **billable** and
+metered in credits; `open_thread` and `record_event` are not. Two calls that
+look billable are not:
+
+* A `respond` that comes back `superseded: true`. Nothing was scheduled.
+* A `submit_messages` whose decision was short-circuited by `skip_decide` or by
+  a message with `has_media`. No decision was computed.
+
+See [Credits and billing](/credits-and-billing).
+
+## Errors
+
+All actions return the standard [error envelope](/api-reference/errors). Common
+status codes across the turn-taking actions:
+
+| Status | Code               | When                                                                                          |
+| ------ | ------------------ | --------------------------------------------------------------------------------------------- |
+| `401`  | `UNAUTHORIZED`     | The bearer token is missing, invalid, or expired.                                             |
+| `402`  | `PAYMENT_REQUIRED` | Your account can't cover a billable call (`submit_messages`, `respond`). You are not charged. |
+| `403`  | `forbidden`        | The token is valid but not allowed here.                                                      |
+| `422`  | `VALIDATION_ERROR` | The body is malformed, or a field is missing or out of range.                                 |
+| `502`  | `UPSTREAM_ERROR`   | A dependency the request relies on was unavailable. Retry with backoff.                       |
+
+## Next
+
+* [Open a thread](/api-reference/turn-taking/open-thread) — start a conversation and connect.
+* [Submit messages](/api-reference/turn-taking/submit-messages) — get a speak / stay-silent decision.
+* [Respond](/api-reference/turn-taking/respond) — pace out the agent's reply.
+* [Record an event](/api-reference/turn-taking/record-event) — report typing and edits.
+* [Who am I](/api-reference/whoami) — verify a token before sending traffic.

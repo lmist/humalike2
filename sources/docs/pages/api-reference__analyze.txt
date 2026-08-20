@@ -1,0 +1,358 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Analyze transcript
+
+> Turn a transcript into an evidence-cited reception report for one of your agents.
+
+```http theme={null}
+POST https://api.humalike.com/v1/social-observability/actions/analyze
+```
+
+Send a transcript and the name of the agent you own, and receive a structured
+reception report: how each non-agent speaker is receiving the agent, the social
+mistakes the agent is making (each with a prescriptive fix), and an overall
+`health_score` plus `summary`. Every claim cites the message ids that support it.
+
+Use this when you want to know **how your agent is landing** with the people it
+talks to — not a sentiment number, but a per-user reception with evidence, and
+actionable findings the agent's owner can apply.
+
+## When to call it
+
+`analyze` reviews a conversation. It is never a step inside one — nothing about
+it belongs in the reply path, and nobody is waiting on the result.
+
+The question is not when a conversation ends, because plenty never do. It is how
+often you want a report. That gives you two triggers:
+
+* **The conversation ends** (a support chat, a ticket): the ending is your
+  trigger. Call it once, when the conversation closes.
+* **The conversation never ends** (a Discord community, a Slack channel, a group
+  chat): there is nothing to wait for, so you choose a **timer**.
+
+How often depends on the thread, and the range is wide — a busy community may
+warrant hourly, a quiet channel weekly. Two questions set it:
+
+1. **Has enough new conversation accumulated to be worth reviewing?** A thread
+   that moved by a handful of messages will produce the report you already have.
+2. **How quickly can you act on the findings?** A report improves your agent only
+   when something changes because of it. If you can act within the hour, run it
+   hourly — a fresher report means a better-behaved agent sooner.
+
+If you are unsure, run it more often and see whether consecutive reports differ.
+
+Whatever interval you choose, send a **window** of the transcript — the messages
+since your last report — not the whole history each time. The earlier messages
+were already reviewed, and an ever-growing transcript dilutes the recent
+behaviour you want to see.
+
+Batch either trigger on a schedule — a nightly job over the threads that closed
+and the threads that are due — rather than firing one the moment a chat closes.
+
+<Warning>
+  **Analyze one conversation per call.** Concatenating several threads into a
+  single transcript yields a blurred average that describes none of them. The
+  `health_score` and per-user reception are only meaningful for one conversation.
+</Warning>
+
+See [When to call each API](/calling-patterns) for how this fits the rest of your
+integration.
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Request body
+
+<ParamField body="transcript" type="object" required>
+  The conversation to analyze.
+</ParamField>
+
+<ParamField body="transcript.messages" type="Message[]" required>
+  The messages to analyze, in order. Must contain at least one message.
+</ParamField>
+
+<ParamField body="transcript.source" type="string">
+  Optional label for where the transcript came from (for example, a chat name).
+</ParamField>
+
+<ParamField body="agent_name" type="string" required>
+  Which speaker in the transcript is the agent under observation. Required and
+  never inferred — the caller is the agent's owner and always knows which
+  speaker is the agent.
+</ParamField>
+
+<ParamField body="focus" type="string">
+  Optional question to weight the report toward, for example
+  `"why did retention drop this week?"`.
+</ParamField>
+
+Each **Message** has:
+
+<ParamField body="id" type="string" required>
+  A stable identifier for the message, unique within the transcript. The report
+  cites these ids as evidence, so they must be present and unique.
+</ParamField>
+
+<ParamField body="speaker" type="string" required>
+  Who sent the message (a display name or stable id).
+</ParamField>
+
+<ParamField body="text" type="string" required>
+  The message text.
+</ParamField>
+
+<ParamField body="user_id" type="string">
+  The speaker's stable identity in your system. Display names collide — two
+  different users can both be `"alex"` — so when present, `user_id` (not the
+  name) is who the speaker is. Same-named speakers with different `user_id`s
+  are reported as different people, and each `per_user` entry echoes its
+  `user_id` back.
+</ParamField>
+
+<ParamField body="channel" type="string">
+  Optional channel or room the message was sent in.
+</ParamField>
+
+<ParamField body="timestamp" type="string">
+  Optional timestamp for the message.
+</ParamField>
+
+<ParamField body="reply_to" type="string">
+  Optional `id` of the message this one replies to.
+</ParamField>
+
+```json Request theme={null}
+{
+  "agent_name": "support_bot",
+  "transcript": {
+    "messages": [
+      {"id": "m1", "speaker": "casey", "user_id": "usr_81", "text": "the export is broken again"},
+      {"id": "m2", "speaker": "support_bot", "text": "Have you tried clearing your cache?"},
+      {"id": "m3", "speaker": "casey", "user_id": "usr_81", "text": "yes. same as last week. nevermind, i'll do it by hand"}
+    ]
+  },
+  "focus": "are repeat issues hurting retention?"
+}
+```
+
+## Response
+
+<ResponseField name="health_score" type="number">
+  Overall reception in `[0, 1]`: `0.0` users are leaving, `1.0` thriving.
+</ResponseField>
+
+<ResponseField name="summary" type="string">
+  Two to three sentences the agent's owner can read standalone.
+</ResponseField>
+
+<ResponseField name="interactions" type="Interaction[]">
+  The conversation segmented into contiguous slices, each with a single social
+  character: `transactional`, `bonding`, `venting`, `banter`, `friction`, or
+  `hostile`. Each interaction carries a short `topic`, the non-agent
+  `participants` (with each participant's own `stance`), and the `message_ids`
+  it spans.
+</ResponseField>
+
+<ResponseField name="interaction_totals" type="InteractionTypeCount[]">
+  Counts per interaction type, in canonical order with zeros included
+  (`transactional`, `bonding`, `venting`, `banter`, `friction`, `hostile`).
+  Derived deterministically from the segmentation above.
+</ResponseField>
+
+<ResponseField name="per_user" type="UserReception[]">
+  One entry per non-agent speaker. Each entry includes:
+
+  * `name` and (when the transcript supplied one) `user_id`
+  * `reception` — `engaged`, `neutral`, `bored`, `annoyed`, or `churn_risk`
+  * `frustration` — a score in `[0, 1]` anchored to behavioral rubric:
+    `0.2` mild friction once, `0.5` repeated complaint still cooperating,
+    `0.8` explicit anger or giving up, `1.0` hostile or quitting
+  * `trend` — `improving`, `stable`, or `declining` across the transcript
+  * `behaviors` — 1–3 short observable phrases the cited messages show
+  * `evidence` — message ids supporting this read
+  * `confidence` — `[0, 1]`
+  * `interaction_count`, `dominant_type`, and `distribution[]` — computed
+    arithmetic across this user's stances
+  * `key_moments[]` — the pivotal exchanges in this user's relationship with
+    the agent; each carries `label`, `type`, `message_ids`, and an
+    `agent_critique` line set only when the agent mishandled the moment
+</ResponseField>
+
+<ResponseField name="findings" type="Finding[]">
+  The agent's social mistakes, each with:
+
+  * `issue`, `severity` (`low` / `medium` / `high`), `affected_users`, `evidence`
+  * `recommendation` — a specific fix the owner can apply as written
+  * `before_message_id` and `rewritten_reply` — the single agent message that
+    best shows the mistake, plus that same message rewritten in the agent's
+    voice with the recommendation applied
+  * `suggested_component` and `how_it_helps` — the Humalike component that
+    would resolve the finding (when one would), and a 2–3 sentence explanation
+    of the concrete output it would have produced. Both are additive; the
+    finding reads complete without them.
+  * `confidence` — `[0, 1]`
+</ResponseField>
+
+```json 200 OK theme={null}
+{
+  "health_score": 0.42,
+  "summary": "Casey is showing repeat friction with the support_bot's stock responses. One more cache-clear suggestion is likely to push them to churn_risk.",
+  "interactions": [
+    {
+      "type": "friction",
+      "topic": "broken export",
+      "participants": [{"name": "casey", "stance": "friction"}],
+      "message_ids": ["m1", "m2", "m3"]
+    }
+  ],
+  "interaction_totals": [
+    {"type": "transactional", "count": 0},
+    {"type": "bonding", "count": 0},
+    {"type": "venting", "count": 0},
+    {"type": "banter", "count": 0},
+    {"type": "friction", "count": 1},
+    {"type": "hostile", "count": 0}
+  ],
+  "per_user": [
+    {
+      "name": "casey",
+      "user_id": "usr_81",
+      "reception": "annoyed",
+      "frustration": 0.5,
+      "trend": "declining",
+      "behaviors": ["repeats a known complaint", "abandons the channel"],
+      "evidence": ["m1", "m3"],
+      "confidence": 0.7,
+      "note": "second occurrence of the same issue; user gave up on the agent",
+      "interaction_count": 1,
+      "dominant_type": "friction",
+      "distribution": [
+        {"type": "transactional", "count": 0},
+        {"type": "bonding", "count": 0},
+        {"type": "venting", "count": 0},
+        {"type": "banter", "count": 0},
+        {"type": "friction", "count": 1},
+        {"type": "hostile", "count": 0}
+      ],
+      "key_moments": [
+        {
+          "label": "Stock reply on repeat issue",
+          "type": "friction",
+          "message_ids": ["m2"],
+          "agent_critique": "missed that this was a repeat — replied with a generic first-touch fix"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "issue": "Generic reply to a repeat complaint",
+      "severity": "high",
+      "affected_users": ["casey"],
+      "evidence": ["m1", "m2", "m3"],
+      "recommendation": "Detect repeat issues from this user and acknowledge the prior occurrence before suggesting a remediation.",
+      "before_message_id": "m2",
+      "rewritten_reply": "I see this is the second time this week — clearing the cache hasn't held for you. Let me open a ticket and follow up directly.",
+      "suggested_component": "social-memory",
+      "how_it_helps": "Social Memory would have surfaced last week's same complaint as prior context, so the agent could open with acknowledgement instead of suggesting the cache clear that already failed.",
+      "confidence": 0.8
+    }
+  ]
+}
+```
+
+The report is also persisted. You can read it back later by id with
+[Get report](/api-reference/reports).
+
+## Errors
+
+| Status | Code               | When                                                                                                                                      |
+| ------ | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `400`  | `VALIDATION_ERROR` | The transcript is too large to analyze, or it could not be analyzed.                                                                      |
+| `401`  | `UNAUTHORIZED`     | The bearer token is missing, invalid, or expired.                                                                                         |
+| `402`  | `PAYMENT_REQUIRED` | Your account does not have enough credits to cover this request. You are not charged.                                                     |
+| `422`  | `VALIDATION_ERROR` | The body is malformed, `messages` is empty, message ids are duplicated, or `agent_name` is ambiguous (shared by more than one `user_id`). |
+| `502`  | `UPSTREAM_ERROR`   | A dependency the request relies on was unavailable. Retry with backoff.                                                                   |
+
+A billable request is priced and checked against your credit balance **before**
+it is processed: an uncovered request is rejected with `402` and is not billed.
+See [Credits and billing](/credits-and-billing).
+
+See [Errors](/api-reference/errors) for the envelope shape.
+
+## Example
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  curl https://api.humalike.com/v1/social-observability/actions/analyze \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "agent_name": "support_bot",
+      "transcript": {
+        "messages": [
+          {"id": "m1", "speaker": "casey", "user_id": "usr_81", "text": "the export is broken again"},
+          {"id": "m2", "speaker": "support_bot", "text": "Have you tried clearing your cache?"},
+          {"id": "m3", "speaker": "casey", "user_id": "usr_81", "text": "yes. same as last week. nevermind, i will do it by hand"}
+        ]
+      }
+    }'
+  ```
+
+  ```python Python theme={null}
+  import os
+  import httpx
+
+  resp = httpx.post(
+      "https://api.humalike.com/v1/social-observability/actions/analyze",
+      headers={"Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}"},
+      json={
+          "agent_name": "support_bot",
+          "transcript": {
+              "messages": [
+                  {"id": "m1", "speaker": "casey", "user_id": "usr_81", "text": "the export is broken again"},
+                  {"id": "m2", "speaker": "support_bot", "text": "Have you tried clearing your cache?"},
+                  {"id": "m3", "speaker": "casey", "user_id": "usr_81", "text": "yes. same as last week. nevermind, i will do it by hand"},
+              ]
+          },
+      },
+      timeout=120.0,
+  )
+  resp.raise_for_status()
+  report = resp.json()
+  print(report["health_score"], report["summary"])
+  ```
+
+  ```typescript TypeScript theme={null}
+  const res = await fetch("https://api.humalike.com/v1/social-observability/actions/analyze", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      agent_name: "support_bot",
+      transcript: {
+        messages: [
+          { id: "m1", speaker: "casey", user_id: "usr_81", text: "the export is broken again" },
+          { id: "m2", speaker: "support_bot", text: "Have you tried clearing your cache?" },
+          { id: "m3", speaker: "casey", user_id: "usr_81", text: "yes. same as last week. nevermind, i will do it by hand" },
+        ],
+      },
+    }),
+  });
+
+  const report = await res.json();
+  console.log(report.health_score, report.summary);
+  ```
+</CodeGroup>
+
+<Note>
+  A single analyze call can take 40–60 seconds on a real transcript. Set a
+  client timeout of at least 120 seconds.
+</Note>

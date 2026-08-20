@@ -1,0 +1,63 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Errors
+
+> Status codes and the error envelope returned by the API.
+
+When a request fails, the API returns a non-`2xx` status code and a JSON body
+with a consistent envelope.
+
+## Error envelope
+
+```json theme={null}
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Human-readable description of what went wrong."
+  }
+}
+```
+
+<ResponseField name="error.code" type="string">
+  A stable, machine-readable code. Branch on this rather than on `message`.
+</ResponseField>
+
+<ResponseField name="error.message" type="string">
+  A human-readable description of the failure. May change; not for branching.
+</ResponseField>
+
+<ResponseField name="error.details" type="array">
+  Optional. Field-level validation details, each with a `field` and `message`,
+  present on some `VALIDATION_ERROR` responses.
+</ResponseField>
+
+<ResponseField name="error.trace_id" type="string">
+  Optional. An identifier for the failed request, included on server-side
+  errors (`5xx`). Quote it when reporting an issue.
+</ResponseField>
+
+## Status codes
+
+| Status | Code               | Meaning                                                                                       |
+| ------ | ------------------ | --------------------------------------------------------------------------------------------- |
+| `400`  | `VALIDATION_ERROR` | The request body is invalid (for example, an empty `messages`).                               |
+| `401`  | `UNAUTHORIZED`     | The bearer token is missing, malformed, or expired.                                           |
+| `402`  | `PAYMENT_REQUIRED` | Your credit balance can't cover the request. See [Credits and billing](/credits-and-billing). |
+| `403`  | `forbidden`        | The credentials are valid but not permitted for this endpoint.                                |
+| `502`  | `UPSTREAM_ERROR`   | A dependency the request relies on was unavailable. Retry.                                    |
+
+## Handling errors
+
+* Always check the status code before reading a success body.
+* Branch on `error.code`, not on the human-readable `error.message`.
+* Retry `502` with backoff; do not retry `400`, `401`, or `402` without fixing
+  the request first (top up your credit balance to clear a `402`).
+
+```python theme={null}
+resp = httpx.post(url, headers=headers, json=payload)
+if resp.is_error:
+    err = resp.json()["error"]
+    raise RuntimeError(f"{err['code']}: {err['message']}")
+```

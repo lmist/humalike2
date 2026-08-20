@@ -1,0 +1,253 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# When to call each API
+
+> How often to call each Humalike component, and two worked integrations: a short 1:1 support chat and an agent in a long-lived thread.
+
+The reference pages describe how to call each endpoint. This page describes how
+often to call it, and where it belongs in your agent's loop.
+
+## Schedules
+
+Each component runs on one of three schedules. Once you know which schedule a
+component is on, its cadence follows.
+
+**Per message.** The call runs inside the reply path, while the user waits, so it
+must be fast. Turn-taking and Social Memory reads are on this schedule.
+
+**Background.** The call runs during the conversation but off the reply path. It
+refreshes something the reply path reads from a cache. Social Learning is on this
+schedule.
+
+**After the fact.** The call runs when a conversation ends, or on a timer for
+conversations that never end. Nothing is waiting on the result. Social
+Observability is on this schedule.
+
+The most common integration error is placing a background or after-the-fact
+component on the per-message schedule.
+
+## Cadence at a glance
+
+| Endpoint                                                                                                            | Schedule       | Call it                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------- |
+| [`submit_messages`](/api-reference/turn-taking/submit-messages)                                                     | Per message    | On every inbound message, or small batch                                                 |
+| [`respond`](/api-reference/turn-taking/respond)                                                                     | Per message    | Once per reply, when the decision is `speak`                                             |
+| [`record_event`](/api-reference/turn-taking/record-event)                                                           | Per message    | On typing and edits, if you use behavioural signals                                      |
+| [`recall`](/api-reference/social-memory/recall)                                                                     | Per message    | Before drafting, to fetch relevant context                                               |
+| [`ingest`](/api-reference/social-memory/ingest)                                                                     | Per message    | After every message. Fire-and-forget; nothing waits on it                                |
+| [`extract`](/api-reference/extract)                                                                                 | Background     | Every few turns in a live chat, every several minutes in a busy thread. Cache the result |
+| [`analyze`](/api-reference/analyze)                                                                                 | After the fact | Once per conversation when it ends. For threads that never end, on a timer               |
+| [`foresee`](/api-reference/foresee)                                                                                 | Per message    | Only if you are not using `respond`                                                      |
+| [`ask`](/api-reference/social-memory/ask)                                                                           | Any time       | Whenever you want to retrieve something from a conversation's memory                     |
+| [`generate`](/api-reference/personas) / [`enhance`](/api-reference/enhance) / [`validate`](/api-reference/validate) | Up front       | Once, when you build the population                                                      |
+| [`whoami`](/api-reference/whoami)                                                                                   | Startup        | Once per process, to check your token                                                    |
+
+## Turn-taking
+
+[Turn-taking](/api-reference/turn-taking/overview) is the reply path, so every
+call is on the per-message schedule.
+
+* [`open_thread`](/api-reference/turn-taking/open-thread): once per conversation,
+  when it starts. Re-open with the same `thread_id` to reconnect a dropped
+  socket; it does not create a second thread.
+* [`submit_messages`](/api-reference/turn-taking/submit-messages): on every
+  inbound message, or on a small batch if several land together. It returns the
+  `speak` or `stay_silent` decision.
+* [`respond`](/api-reference/turn-taking/respond): once per reply, only when the
+  decision was `speak`.
+* [`record_event`](/api-reference/turn-taking/record-event): as typing and edits
+  happen, if the thread enables behavioural signals.
+
+In a 1:1 chat where every message is addressed to your agent, pass
+[`skip_decide: true`](/api-reference/turn-taking/submit-messages): the decision
+is always `speak`, and skipping it returns the `turn_epoch` sooner. In a group
+thread, omit it. Most messages there are not addressed to the agent, and the
+decision is what keeps it out of side chatter.
+
+## Theory of Mind
+
+`respond` refines your draft through a Theory of Mind pass before pacing it into
+messages, so an integration that uses turn-taking does not call
+[`foresee`](/api-reference/foresee) separately. Doing so refines an
+already-refined draft: the second pass rewrites the first pass's output rather
+than your agent's words.
+
+* **Using turn-taking.** Submit the raw draft to `respond`. The refinement runs
+  inside it.
+* **Not using turn-taking.** Call `foresee` once per reply, on the draft, before
+  sending it down your own delivery path. It is on the per-message schedule.
+
+Call `foresee` alongside turn-taking only when you need its `mental_state` and
+`predicted_reaction` fields directly, for example to branch on `risk` before
+replying at all. `respond` refines the draft but does not return them.
+
+<Note>
+  If a `respond` draft comes back reworded more than expected, that is the
+  refinement pass. Pass a `system_prompt` so the rewrite keeps your agent's
+  voice. See [`respond`](/api-reference/turn-taking/respond) for how the pass is
+  metered.
+</Note>
+
+## Social Memory
+
+[Social Memory](/api-reference/social-memory/overview) spans two schedules.
+
+* [`ingest`](/api-reference/social-memory/ingest): every message, the human's and
+  your agent's. Memory can only recall what it has received. Nothing waits on the
+  result, so call it in the background and ignore the response. A dropped
+  `ingest` costs one message of memory, not a reply.
+* [`recall`](/api-reference/social-memory/recall): on the turns where you reply.
+  In a 1:1 chat that is every message. In a group thread, call it after the
+  decision returns `speak`. It runs while the user waits, so issue it in parallel
+  with your other per-message calls rather than in sequence.
+* [`ask`](/api-reference/social-memory/ask): whenever you want to retrieve
+  something from a scope's memory. It is not part of the reply loop.
+
+## Social Learning
+
+[`extract`](/api-reference/extract) reads a transcript and returns a norms
+profile plus a `prompt_block` for your agent's prompt. It reads the whole
+conversation and reasons about it, so it takes seconds rather than milliseconds
+and does not belong between an inbound message and your agent's reply.
+
+Use it on the background schedule:
+
+1. Call `extract` on a thread you do not await.
+2. Cache the returned `prompt_block`, keyed by conversation.
+3. Have the reply path read the cache, never the API.
+4. Refresh whenever the conversation has given it something new to learn.
+
+A stale profile is an agent drifting out of the group's voice, so refresh
+readily:
+
+| Conversation                          | Refresh `extract`                                  |
+| ------------------------------------- | -------------------------------------------------- |
+| A live 1:1 chat, a few dozen messages | On the first turn, then every few turns            |
+| A busy group thread, hundreds a day   | Every several minutes, or every few dozen messages |
+| A slow channel, a few messages a day  | Whenever a handful of new messages land            |
+
+What limits the refresh rate is new material, not cost. A group's formality, its
+in-jokes and what it sanctions do not change between two messages, so a refresh
+with nothing new to read returns the profile you already hold. Where two
+intervals are both defensible, take the faster one. Send a rolling window of the
+last 100 messages or so rather than the full history: the recent voice is the one
+to match.
+
+## Social Observability
+
+[`analyze`](/api-reference/analyze) returns a health score, per-user reception
+and findings. It reviews a conversation rather than participating in one, and
+nothing waits on the result. There are two triggers:
+
+* **The conversation ends** (a support chat, a ticket, an email thread). The
+  ending is the trigger. Call `analyze` once, when it closes.
+* **The conversation never ends** (a Discord community, a Slack channel, a group
+  chat). There is no ending, so you choose a timer.
+
+For the second case the interval depends on the thread. A server carrying a
+thousand messages an hour and a team channel carrying ten a day are different
+problems. Two questions set it. First, has enough new conversation accumulated to
+review: a thread that has moved by five messages returns the report you already
+have. Second, how quickly can you act on the findings: a report changes the agent
+only when something changes because of it, so if you can act within the hour, run
+it hourly. The busiest threads may warrant hourly or faster; quiet channels are
+well served weekly. If the right interval is unclear, run it more often and
+compare consecutive reports.
+
+Analyze one conversation per call. Concatenating several threads into a single
+transcript produces an average that describes none of them. Send the messages
+since the last report rather than the full history, which dilutes the recent
+behaviour the report is meant to surface. Because nothing waits on the result,
+run analyses on a schedule, such as a nightly job over the threads that closed
+and the threads that are due.
+
+## Personas
+
+[Personas](/api-reference/personas) is on no conversational schedule, because it
+is not part of a conversation. Call [`generate`](/api-reference/personas) once to
+build a population: a simulated user base to test a product against, a research
+cohort, a survey panel, a cast of characters, a persona for an agent to adopt.
+Store the result and read it from your own storage from then on. The same applies
+to [`enhance`](/api-reference/enhance) and [`validate`](/api-reference/validate),
+which you run while authoring or refining a population.
+
+Generation is asynchronous and takes minutes: `POST` returns an id, and you poll
+the population repository for the result. No request path should wait on it.
+
+## Account
+
+Two calls belong to your process rather than to a conversation.
+
+* [`whoami`](/api-reference/whoami): once at startup. It confirms the token still
+  works, so a revoked key surfaces at boot rather than mid-conversation. Cache
+  the answer for the life of the process.
+* [`usage-summary`](/api-reference/usage-summary): whenever you want to read your
+  own usage, typically from a dashboard or a scheduled report. Do not poll it
+  from inside the reply loop.
+
+## Integration examples
+
+Cadence depends on the shape of the agent. These two are near opposites, and most
+integrations resemble one of them.
+
+### A 1:1 support agent
+
+A customer opens a chat, asks a few questions and leaves. Every message is
+addressed to the agent, and the agent always replies. Because silence is never
+the right answer, `submit_messages` carries `skip_decide`, and `analyze` has an
+explicit trigger: the chat ended.
+
+```text theme={null}
+once per process   whoami                        check the token
+once per chat      open_thread                   get the thread and socket
+──────────────── per inbound message ────────────────
+                   submit_messages               skip_decide: true
+                   recall                        in parallel, fetch context
+                   ingest                        in background, store the message
+                   [ your agent drafts a reply ]
+                   respond                       refines, paces and delivers
+                   ingest                        in background, store the reply
+──────────────── background, every few turns ────────
+                   extract                       refresh the cached voice
+──────────────── once, when the chat ends ───────────
+                   analyze                       review the conversation
+```
+
+### An agent in a group thread
+
+The agent sits in a busy channel with several people. Most messages are not
+addressed to it, so `submit_messages` decides each turn and most return
+`stay_silent`. The thread never ends, so `analyze` runs on a timer and `extract`
+refreshes on a wall clock rather than a turn count.
+
+```text theme={null}
+once per process   whoami
+once per thread    open_thread                   with integrations.social_signals
+──────────────── per inbound message ────────────────
+                   submit_messages               decides speak or stay_silent
+                     └─ stay_silent: the turn ends here
+                   recall                        only on a speak turn
+                   [ your agent drafts a reply ]
+                   respond
+──────────────── on typing and edits ───────────────
+                   record_event                  feeds behavioural signals
+──────────────── background, on a wall clock ───────
+                   extract                       refresh the cached voice
+──────────────── on a timer you set ────────────────
+                   analyze                       messages since the last report
+```
+
+## Failures
+
+Treat every Humalike call as an enhancement to your agent, not a dependency of
+it. If a call fails or times out, let the agent reply anyway: `submit_messages`
+can default to `speak`, `respond` can fall back to sending your unmodified draft,
+and a missing `prompt_block` or `recall` context degrades the reply rather than
+blocking it. Losing timing or tone should never cost a user their answer.
+
+## Next
+
+* [Turn-taking](/api-reference/turn-taking/overview): the per-message loop in full.
+* [Credits and billing](/credits-and-billing): how calls are metered.

@@ -1,0 +1,78 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Credits and billing
+
+> How Humalike meters billable calls with credits, and what happens when your balance can't cover one.
+
+Some Humalike calls do real work on your behalf — generating or enhancing
+personas, validating a population, extracting a Social Learning profile, a
+Theory of Mind foresee, a Social Observability analysis, a Social Memory read.
+Those calls are **billable** and metered in **credits**. Plain writes (such as a
+Social Memory `ingest`) and reads of your own data are not billable.
+
+This page covers billing from a caller's point of view: how your account is
+funded, how a call is priced, and the
+[`402 Payment Required`](#402-payment-required) you get back when your balance
+can't cover one.
+
+## Your credit account
+
+Each Humalike account has a single credit balance, shared across every billable
+endpoint. The first billable call your account makes provisions the account and
+grants its initial allowance automatically — there is nothing to claim ahead of
+time. Every billable call after that draws against the same balance.
+
+To read your current usage at any time, call
+[`POST /v1/credits/projections/usage-summary`](/api-reference/usage-summary).
+
+## How a call is priced
+
+Billing is **predictable and capped**:
+
+* **Priced before it runs.** Each billable request is priced from its inputs
+  (larger inputs and longer outputs cost more) and checked against your balance
+  before any work begins.
+* **Capped at that price.** A call never costs more than the price computed up
+  front. You pay for the work actually done, up to that ceiling.
+* **Failed calls cost zero.** If a request fails after it is accepted, nothing
+  is charged.
+
+Because the price is checked first, an underfunded request is rejected before
+any work is done — see below.
+
+## `402 Payment Required`
+
+If your balance can't cover the price of a request, the endpoint rejects it with
+HTTP `402 Payment Required` **before the call runs**, using the standard
+[error envelope](/api-reference/errors):
+
+```json 402 Payment Required theme={null}
+{
+  "error": {
+    "code": "PAYMENT_REQUIRED",
+    "message": "insufficient credits"
+  }
+}
+```
+
+Branch on `error.code === "PAYMENT_REQUIRED"` rather than on the message string.
+
+A `402` is a terminal answer to that exact request — **do not retry it without
+changing something**, because the same request will keep getting rejected for
+the same reason. To resolve it:
+
+* Top up your account from the Humalike dashboard, then retry the call.
+* Or shrink the request (a smaller transcript, a smaller `count`) so its price
+  drops below your remaining balance.
+
+When you see a `402`, you can rely on it as a hard gate: the call did not run,
+and you were not charged.
+
+## Checking your usage
+
+To pull your own billing data without leaving the API, see
+[`POST /v1/credits/projections/usage-summary`](/api-reference/usage-summary).
+It returns 30-day totals, a per-product breakdown of where your credits went,
+and a 7-day daily series suitable for charting.

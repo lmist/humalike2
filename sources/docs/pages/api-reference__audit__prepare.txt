@@ -1,0 +1,101 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Prepare a run
+
+> Send a raw transcript and get back a parked run, its speakers, and a guess at your agent.
+
+```http theme={null}
+POST https://api.humalike.com/v1/social-observability/actions/audit_prepare
+```
+
+Send a conversation as raw text. The API parses it into messages, stores it as
+a **run**, and returns the speakers it found plus a guess at which one is your
+agent. Nothing is audited yet — the run is parked until
+[`audit_launch`](/api-reference/audit/launch) confirms the agent.
+
+Send the text exactly as you have it. Timestamps, usernames, join/leave notices,
+and platform decoration are all handled; you do not need to strip or reformat
+anything.
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Request body
+
+<ParamField body="raw_text" type="string" required>
+  The conversation, as text. 1–300,000 characters. Longer than that is rejected
+  with `422` before any charge.
+</ParamField>
+
+## Request
+
+```bash theme={null}
+curl https://api.humalike.com/v1/social-observability/actions/audit_prepare \
+  -H "Authorization: Bearer $HUMALIKE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "raw_text": "[10:02] casey: the export is broken again\n[10:03] support_bot: Have you tried clearing your cache?\n[10:04] casey: nevermind, i will do it by hand\n"
+  }'
+```
+
+## Response
+
+```json theme={null}
+{
+  "run_id": "9f8b1c04-6d2a-4f31-9c77-2b1d0e5a8c43",
+  "messages": 3,
+  "participants": ["casey", "support_bot"],
+  "agent_guess": "support_bot"
+}
+```
+
+<ResponseField name="run_id" type="string">
+  The run's id. Pass it to [`audit_launch`](/api-reference/audit/launch) and to
+  [`audit-run`](/api-reference/audit/run).
+</ResponseField>
+
+<ResponseField name="messages" type="integer">
+  How many messages were parsed out of your text. The whole transcript is
+  stored — nothing is dropped.
+</ResponseField>
+
+<ResponseField name="participants" type="string[]">
+  Every speaker found, in the order they first speak. These are exactly the
+  values `audit_launch` accepts as `agent_name`.
+</ResponseField>
+
+<ResponseField name="agent_guess" type="string | null">
+  Which speaker looks like an AI agent. Use it to pre-select an option; do not
+  treat it as the answer. `null` when the transcript gives no clear signal,
+  which is a normal result and not an error.
+</ResponseField>
+
+## Errors
+
+| Status | Code               | Cause                                                                                                           |
+| ------ | ------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `400`  | `VALIDATION_ERROR` | The transcript has more than 250 messages, the text is too large to read, or no messages could be read from it. |
+| `401`  | `UNAUTHORIZED`     | Missing or invalid bearer token.                                                                                |
+| `402`  | `PAYMENT_REQUIRED` | Your credit balance can't cover the call.                                                                       |
+| `422`  | `VALIDATION_ERROR` | `raw_text` is empty or over 300,000 characters.                                                                 |
+
+The over-cap message names both numbers so you can act on it:
+
+```json theme={null}
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "This transcript has 5,319 messages; the audit accepts at most 250."
+  }
+}
+```
+
+Send the most recent 250 messages and call again. See
+[Size limits](/api-reference/audit/overview#size-limits).
+
+Next: [Launch a run](/api-reference/audit/launch).

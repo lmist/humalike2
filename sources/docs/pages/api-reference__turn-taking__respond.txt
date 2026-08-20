@@ -1,0 +1,259 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Respond
+
+> Submit the agent's drafted reply; it is paced into chat messages and delivered over the WebSocket.
+
+```http theme={null}
+POST https://api.humalike.com/v1/turn-taking/actions/respond
+```
+
+Submit your agent's drafted reply after a `speak` decision. Turn-taking
+rewrites it into **1–5 short chat messages, scheduled a beat apart**, and
+delivers them on the thread's WebSocket as `turn_taking.message` events (with a
+`turn_taking.typing` indicator around them). The response tells you what was
+scheduled; the messages themselves arrive over the socket. See
+[Receiving messages from the agent](/api-reference/turn-taking/overview#receiving-messages-from-the-agent).
+
+Before it is paced, your draft is **refined through a Theory of Mind pass** —
+predicting how it will land for the people in the thread, and rewording it to
+head off the predicted damage. This happens inside `respond`, so you do not need
+to call [`foresee`](/api-reference/foresee) yourself first; doing so runs the
+refinement twice. Pass a `system_prompt` so the rewrite keeps your agent's voice.
+
+Pass the `turn_epoch` from the
+[`submit_messages`](/api-reference/turn-taking/submit-messages) that returned
+`speak`. If a newer batch has arrived since, the draft is stale: nothing is
+scheduled, nothing is billed, and the response is `superseded: true`.
+
+This call is billable, unless it is superseded. Because the draft is refined
+through Theory of Mind, a `respond` meters **two** billable units: the reply and
+the refinement. The refinement appears as `theoryofmind` on your
+[usage summary](/api-reference/usage-summary). See
+[Billing](/api-reference/turn-taking/overview#billing).
+
+This call is idempotent: retrying the same reply does not schedule it twice.
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Request body
+
+<ParamField body="thread_id" type="string" required>
+  The thread to reply in.
+</ParamField>
+
+<ParamField body="content" type="string" required>
+  The agent's drafted reply, 1–4000 characters. This is the text that gets
+  paced into chat messages.
+</ParamField>
+
+<ParamField body="turn_epoch" type="integer" required>
+  The `turn_epoch` from the deciding `submit_messages`. Required: a reply whose
+  epoch is behind the thread's current turn is dropped as stale (an
+  interruption).
+</ParamField>
+
+<ParamField body="system_prompt" type="string">
+  Optional system-prompt text — the agent's identity, character, and style —
+  applied while rewriting the reply so it stays in the agent's voice. Up to
+  100,000 characters. Sent per request.
+</ParamField>
+
+<ParamField body="agent_name" type="string">
+  Optional display name for the agent in this reply, 1–255 characters. Sent per
+  request, so each agent in a group chat can send its own.
+</ParamField>
+
+<ParamField body="pacing" type="PacingOverrides">
+  Optional per-reply overrides for how the reply is paced out. Each field you
+  omit keeps its default; the overrides apply to this reply only and never
+  change the thread's or account's defaults.
+
+  <Expandable title="PacingOverrides">
+    <ParamField body="reading_delay_ms" type="number">
+      How long the agent "reads" before its first message, in milliseconds.
+      `0`–`30000`. Defaults to no reading pause.
+    </ParamField>
+
+    <ParamField body="typing_wpm" type="number">
+      Typing speed in words per minute, used to derive each message's typing
+      delay. Greater than `0`, up to `2000`.
+    </ParamField>
+
+    <ParamField body="max_typing_ms" type="number">
+      Ceiling on any single message's typing delay, in milliseconds. Greater
+      than `0`, up to `60000`. Every message also has a default *minimum*
+      typing delay; if you set this ceiling below that minimum, the minimum
+      drops to match, so this value is always respected as the hard ceiling.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="metadata" type="object">
+  Optional opaque JSON object carried with this reply. It is never read or
+  acted on — it is echoed back verbatim on every `turn_taking.message` event the
+  reply produces, so you can correlate delivered messages with your own state
+  (for example a `reply_to_message_id` for bubble placement).
+
+  Serialized, it must be at most 4096 bytes.
+</ParamField>
+
+```json Request theme={null}
+{
+  "thread_id": "b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+  "content": "Yes — I can take a look. Can you share the export you tried and roughly when it failed?",
+  "turn_epoch": 7,
+  "pacing": {"typing_wpm": 320, "max_typing_ms": 4000},
+  "metadata": {"reply_to_message_id": "m_8814"}
+}
+```
+
+## Response
+
+<ResponseField name="scheduled" type="ScheduledMessage[]">
+  The chat messages the reply was paced into, in delivery order. Each is also
+  pushed over the WebSocket as a `turn_taking.message` event at its
+  `deliver_at`. Empty when `superseded` is `true`.
+
+  <Expandable title="ScheduledMessage">
+    <ResponseField name="id" type="string">
+      The scheduled message's id.
+    </ResponseField>
+
+    <ResponseField name="thread_id" type="string">
+      The thread this message belongs to.
+    </ResponseField>
+
+    <ResponseField name="content" type="string">
+      The message text for this piece of the reply.
+    </ResponseField>
+
+    <ResponseField name="position" type="integer">
+      0-based order of this message within the reply.
+    </ResponseField>
+
+    <ResponseField name="deliver_at" type="string">
+      When the message is delivered on the WebSocket (ISO 8601).
+    </ResponseField>
+
+    <ResponseField name="status" type="string">
+      The message's delivery status.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="superseded" type="boolean">
+  `true` when the draft was stale because a newer batch arrived first. Nothing
+  was scheduled and nothing was billed — draft again against the latest
+  decision. `false` on a normal reply.
+</ResponseField>
+
+```json 200 OK theme={null}
+{
+  "scheduled": [
+    {
+      "id": "f2a0c6d1-8e3b-4a90-9c7e-2b1d4f6a0c11",
+      "thread_id": "b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+      "content": "Yes — I can take a look.",
+      "position": 0,
+      "deliver_at": "2026-06-16T12:00:01Z",
+      "status": "scheduled"
+    },
+    {
+      "id": "a7b3e9c2-1d44-4f08-bb6a-90c2e7d5f3a2",
+      "thread_id": "b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+      "content": "Can you share the export you tried and roughly when it failed?",
+      "position": 1,
+      "deliver_at": "2026-06-16T12:00:02Z",
+      "status": "scheduled"
+    }
+  ],
+  "superseded": false
+}
+```
+
+A superseded reply schedules nothing:
+
+```json 200 OK (superseded) theme={null}
+{
+  "scheduled": [],
+  "superseded": true
+}
+```
+
+## Errors
+
+| Status | Code               | When                                                                                                                                                |
+| ------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `401`  | `UNAUTHORIZED`     | The bearer token is missing, invalid, or expired.                                                                                                   |
+| `402`  | `PAYMENT_REQUIRED` | Your account can't cover this request. You are not charged.                                                                                         |
+| `403`  | `forbidden`        | The token is valid but not allowed here.                                                                                                            |
+| `422`  | `VALIDATION_ERROR` | The body is malformed, `content` is empty or too long, `turn_epoch` is missing, a `pacing` field is out of range, or `metadata` exceeds 4096 bytes. |
+| `502`  | `UPSTREAM_ERROR`   | A dependency the request relies on was unavailable. Retry with backoff.                                                                             |
+
+A stale draft is **not** an error — it returns `200` with `superseded: true`.
+See [Errors](/api-reference/errors) for the envelope shape.
+
+## Example
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  curl https://api.humalike.com/v1/turn-taking/actions/respond \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "thread_id": "b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+      "content": "Yes — I can take a look. Can you share the export you tried and roughly when it failed?",
+      "turn_epoch": 7
+    }'
+  ```
+
+  ```python Python theme={null}
+  import os
+  import httpx
+
+  resp = httpx.post(
+      "https://api.humalike.com/v1/turn-taking/actions/respond",
+      headers={"Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}"},
+      json={
+          "thread_id": "b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+          "content": "Yes — I can take a look. Can you share the export you tried and roughly when it failed?",
+          "turn_epoch": 7,
+      },
+  )
+  resp.raise_for_status()
+  result = resp.json()
+  if result["superseded"]:
+      print("interrupted; draft against the latest decision")
+  else:
+      print(f"{len(result['scheduled'])} messages scheduled; watch the WebSocket")
+  ```
+
+  ```typescript TypeScript theme={null}
+  const res = await fetch("https://api.humalike.com/v1/turn-taking/actions/respond", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      thread_id: "b9c1e4f0-2a77-4f6e-9d2a-1f0c8e5b3a44",
+      content: "Yes — I can take a look. Can you share the export you tried and roughly when it failed?",
+      turn_epoch: 7,
+    }),
+  });
+  if (!res.ok) throw new Error(`respond failed: ${res.status}`);
+  const { scheduled, superseded } = await res.json();
+  // The messages arrive over the WebSocket; superseded === true means draft again.
+  ```
+</CodeGroup>
+
+## Next
+
+* [Record an event](/api-reference/turn-taking/record-event) — report typing and edits for behavioural signals.

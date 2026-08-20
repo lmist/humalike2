@@ -1,0 +1,113 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Quickstart
+
+> Make your first authenticated request to the Humalike API.
+
+This guide makes one authenticated request end to end so you can see the shape
+of a Humalike call: how you send your token, what a request body looks like, and
+how to read the response. It uses the [Social Learning API](/api-reference/extract)
+as the example — every other API follows the same pattern.
+
+## 1. Get a token
+
+You authenticate with a bearer token tied to your account. See
+[Authentication](/authentication) for how to obtain and send it. In the examples
+below, set it as an environment variable:
+
+```bash theme={null}
+export HUMALIKE_TOKEN="your-token"
+```
+
+## 2. Send a transcript
+
+`POST /v1/social-learning/actions/extract` with a JSON body containing a `transcript`
+whose `messages` array has at least one message.
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  curl https://api.humalike.com/v1/social-learning/actions/extract \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "transcript": {
+        "messages": [
+          {"id": "m1", "speaker": "ada", "text": "yo we still on for tonight"},
+          {"id": "m2", "speaker": "max", "text": "ye 8pm same spot"}
+        ]
+      }
+    }'
+  ```
+
+  ```python Python theme={null}
+  import os
+  import httpx
+
+  resp = httpx.post(
+      "https://api.humalike.com/v1/social-learning/actions/extract",
+      headers={"Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}"},
+      json={
+          "transcript": {
+              "messages": [
+                  {"id": "m1", "speaker": "ada", "text": "yo we still on for tonight"},
+                  {"id": "m2", "speaker": "max", "text": "ye 8pm same spot"},
+              ]
+          }
+      },
+  )
+  resp.raise_for_status()
+  print(resp.json()["prompt_block"])
+  ```
+
+  ```typescript TypeScript theme={null}
+  const res = await fetch("https://api.humalike.com/v1/social-learning/actions/extract", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      transcript: {
+        messages: [
+          { id: "m1", speaker: "ada", text: "yo we still on for tonight" },
+          { id: "m2", speaker: "max", text: "ye 8pm same spot" },
+        ],
+      },
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+  const data = await res.json();
+  console.log(data.prompt_block);
+  ```
+</CodeGroup>
+
+## 3. Read the response
+
+A successful call returns `200` with a structured `profile` and a ready-to-use
+`prompt_block`:
+
+```json theme={null}
+{
+  "profile": { "summary": "casual, lowercase, terse group chat", "...": "..." },
+  "prompt_block": "Match this group's voice. Write in lowercase; keep messages to one or two short lines; ..."
+}
+```
+
+Drop `prompt_block` straight into your agent's prompt, or read individual
+`profile` fields if you want finer control.
+
+<Check>
+  That's it — one authenticated `POST` is the whole flow. Every Humalike API
+  works this way: a bearer token, a JSON body, a JSON response.
+</Check>
+
+## Next
+
+* [Social Learning](/api-reference/extract) — the full request and response schema for the call above.
+* [Persona](/api-reference/personas) — generate a lifelike population from a prompt.
+* [Theory of Mind](/api-reference/foresee) — predict how a reply will land before you send it.
+* [Turn-taking](/api-reference/turn-taking/overview) — decide when an agent speaks and pace its reply.
+* [Social Memory](/api-reference/social-memory/overview) and [Social Observability](/api-reference/analyze) — remember a conversation, and measure how your agent is landing.

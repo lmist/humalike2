@@ -1,0 +1,129 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Get a run
+
+> Poll a launched run and read the finished audit.
+
+```http theme={null}
+POST https://api.humalike.com/v1/social-observability/projections/audit-run
+```
+
+Read a run: its stored transcript and every section of the audit that has
+finished so far. This is how you collect the result of
+[`audit_launch`](/api-reference/audit/launch).
+
+The call is free and read-only. Poll it every few seconds after launching.
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Request body
+
+<ParamField body="run_id" type="string" required>
+  The run to read.
+</ParamField>
+
+## Request
+
+```bash theme={null}
+curl https://api.humalike.com/v1/social-observability/projections/audit-run \
+  -H "Authorization: Bearer $HUMALIKE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "run_id": "9f8b1c04-6d2a-4f31-9c77-2b1d0e5a8c43" }'
+```
+
+## Knowing when it is done
+
+Sections appear as they finish, so an early poll returns a partly filled
+response. The audit is finished when **`report`, `read`, and `verdicts` are all
+non-null**:
+
+```python theme={null}
+import time, httpx
+
+while True:
+    run = httpx.post(url, headers=headers, json={"run_id": run_id}).json()
+    if run["report"] and run["read"] and run["verdicts"] is not None:
+        break
+    time.sleep(5)
+
+print(run["report"]["health_score"], run["report"]["summary"])
+```
+
+`replies` fills in shortly after those three, so read it last. A run typically
+completes in a few minutes; if all three are still null after 30 minutes, treat
+the run as failed and prepare a new one.
+
+## Response
+
+<ResponseField name="run_id" type="string">
+  The run's id.
+</ResponseField>
+
+<ResponseField name="agent_name" type="string | null">
+  The agent under review. `null` on a run that was prepared but never launched.
+</ResponseField>
+
+<ResponseField name="transcript" type="object">
+  The parsed transcript the audit ran on, as `{ "messages": [...] }`. Each
+  message carries the `id` (`m1`, `m2`, … in order), `speaker`, and `text`. The
+  ids are what the report's evidence cites.
+</ResponseField>
+
+<ResponseField name="report" type="object | null">
+  The reception report: `health_score`, `summary`, `findings`, `per_user`,
+  `interactions`, and `interaction_totals`. Same shape as
+  [`analyze`](/api-reference/analyze). `null` until that section finishes.
+</ResponseField>
+
+<ResponseField name="read" type="object | null">
+  What your agent could have known about the people in the conversation.
+
+  <Expandable title="read">
+    <ResponseField name="prompt_block" type="string | null">
+      The context, rendered as a block you can paste into a system prompt.
+    </ResponseField>
+
+    <ResponseField name="portrait" type="object | null">
+      A portrait of your agent as the transcript presents it.
+    </ResponseField>
+
+    <ResponseField name="mental_state" type="array | null">
+      Per person: their inferred `beliefs`, `goals`, and `emotions`.
+    </ResponseField>
+
+    <ResponseField name="profiles" type="array | null">
+      Per person: the `facts` a memory would have retained about them.
+    </ResponseField>
+  </Expandable>
+
+  Every field inside is independently optional — a section that could not be
+  produced is omitted rather than failing the audit.
+</ResponseField>
+
+<ResponseField name="verdicts" type="array | null">
+  One entry per turn your agent took, each with the `index` of the turn's first
+  message, a `risk` grade, a `summary` of what the turn risked, and
+  `predicted_message` — what the other person was likely to say next.
+</ResponseField>
+
+<ResponseField name="replies" type="array">
+  Rewrites of your agent's worst turns. Each has the `index` of the turn, the
+  rewritten `reply`, `messages` (the reply split the way a person would send
+  it), and the `risk` grade of the rewrite. Empty until the rewrites finish.
+</ResponseField>
+
+## Errors
+
+| Status | Code               | Cause                                              |
+| ------ | ------------------ | -------------------------------------------------- |
+| `400`  | `VALIDATION_ERROR` | The run does not exist, or does not belong to you. |
+| `401`  | `UNAUTHORIZED`     | Missing or invalid bearer token.                   |
+
+Next: [Analyze a transcript directly](/api-reference/analyze) when you already
+have structured messages and want just the report.

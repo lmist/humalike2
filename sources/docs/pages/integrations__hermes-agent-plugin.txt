@@ -1,0 +1,20 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Hermes Agent plugin
+
+> Use the Humalike API from the Hermes Agent framework.
+
+The [Humalike plugin](https://github.com/Humalike/hermes-humalike-plugin)
+integrates the Humalike API into the
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) framework. It brings
+four capabilities to an agent:
+
+* **Turn-taking** — decides when to respond instead of replying instantly, and naturalizes replies to read as human-written.
+* **Persona development** — the `/soul enhance` command turns a basic bot description into a fully developed character with a distinctive voice.
+* **Theory of mind** — analyzes how a message will land and adjusts tone before sending.
+* **Social learning** — adopts the conversation group's language patterns, slang, and norms.
+
+See the [plugin README](https://github.com/Humalike/hermes-humalike-plugin) for
+installation and configuration.

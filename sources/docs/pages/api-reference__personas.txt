@@ -1,0 +1,638 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Personas
+
+> Generate a grounded, lifelike population from a single prompt.
+
+```http theme={null}
+POST https://api.humalike.com/v1/personas/actions/generate
+```
+
+Generate a population of richly detailed, humanlike personas from one
+natural-language prompt. You describe **who** you want and **how many** — nothing
+else — and get back a population that holds together like a real one: believable
+individuals whose traits vary and correlate the way they would in the real
+world, each member internally consistent.
+
+You never declare fields, distributions, or formats. A single prompt such as
+*"10 League of Legends players from around the globe"* is enough on its own: the
+API does the hard modeling of what makes that population realistic and returns
+one that actually looks the part — the right mix of regions and ranks, with the
+detail (like higher ranks playing more) that a believable population has. It
+hands that model back alongside the personas as a `blueprint` (see
+[The population](#the-population)), so what it inferred is yours to inspect, not
+a black box.
+
+This endpoint is **asynchronous**. The `POST` returns `200 OK` right away
+with an `id`; you then `GET` the population repository route with that id until it
+is ready. Generation grounds the request in real-world data and writes a persona for
+each member, so it can run for minutes — see the
+[note on grounding](#grounding-and-timing) below.
+
+## When to call it
+
+**Up front, once** — then reuse what it returns. Whatever the population is for:
+a simulated user base to test a product against, a research cohort, a survey
+panel, a cast of characters, a persona for an agent to adopt. You generate it
+before the thing that uses it runs, and read the personas from your own storage
+afterwards.
+
+Generation grounds the request in real-world data and writes a persona per
+member, so it takes minutes. Nothing on a request path — no message loop, no
+timer, no per-user call — should be waiting on it.
+
+The same holds for [`enhance`](/api-reference/enhance) and
+[`validate`](/api-reference/validate): you run them while you are authoring or
+refining a population, store the result, and read it back at runtime. See
+[When to call each API](/calling-patterns).
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Request body
+
+The request is intentionally minimal. These three fields are the **entire**
+contract — there is nothing else to send.
+
+<ParamField body="prompt" type="string" required>
+  A non-empty natural-language description of who to generate. This is the only
+  signal the API needs; it infers the field structure from the prompt.
+</ParamField>
+
+<ParamField body="count" type="integer" default="1">
+  How many personas to generate. Must be at least `1`. Large counts are capped; a
+  request over the limit returns `VALIDATION_ERROR`. The population size is this
+  number; there is no separate batch endpoint.
+</ParamField>
+
+<ParamField body="grounding" type="string" default="off">
+  How hard to ground the population in real-world data before generating. One of:
+
+  * `off` — generate from the prompt alone, with no external lookups.
+  * `web` — enrich the inferred field model with a quick live lookup so
+    distributions and details reflect current real-world data.
+  * `research` — run deeper research before generating, for the strongest
+    real-world grounding and cited sources.
+</ParamField>
+
+```json Request theme={null}
+{
+  "prompt": "10 League of Legends players from around the globe",
+  "count": 10,
+  "grounding": "web"
+}
+```
+
+## Start a population
+
+The `POST` returns `200 OK` straight away. It does not wait for the personas; it
+gives you an `id` used with the population repository route.
+
+<ResponseField name="id" type="string">
+  The population's identifier. Use it to poll for the result.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Always `pending` in this response — the population has been accepted and queued.
+</ResponseField>
+
+```json 200 OK theme={null}
+{
+  "id": "8f2c1a7d-9e2b-4f42-9344-0df65f73e5d1",
+  "status": "pending"
+}
+```
+
+### Grounding and timing
+
+<Note>
+  Generation grounds the request in real-world data and then writes a persona for
+  each member, so it does not return on the `POST`. `research` grounding runs
+  deeper lookups and can take **minutes**, and time grows with `count`. That is
+  why this endpoint hands back an `id` to poll rather than holding the connection
+  open. Poll on an interval of a few seconds and do not block a user-facing
+  request on a `research` population.
+</Note>
+
+## Poll for the result
+
+```http theme={null}
+GET https://api.humalike.com/v1/personas/repositories/Population/by-id/{id}
+```
+
+Call `GET` with the returned id until `status` is `succeeded` or `failed`.
+
+<ResponseField name="id" type="string">
+  The population's identifier, the same value you started.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Where the population is in its lifecycle. One of:
+
+  * `pending` — accepted and queued; generation has not started yet.
+  * `running` — grounding and generation are under way; `progress` updates.
+  * `succeeded` — finished; `result` holds the population.
+  * `failed` — finished; `error` contains a stable failure category.
+
+  `pending` and `running` are not terminal — keep polling. `succeeded` and
+  `failed` are terminal — stop polling.
+</ResponseField>
+
+<ResponseField name="progress" type="object">
+  How far generation has got, present while `running`. `produced` is how many
+  personas are written so far and `total` is how many were requested.
+</ResponseField>
+
+<ResponseField name="result" type="object">
+  The generated **population**, present only when `status` is `succeeded`. Its
+  shape is described under [The population](#the-population) below.
+</ResponseField>
+
+<ResponseField name="error" type="string">
+  A stable failure category such as `provider_error`. Present only when `status`
+  is `failed`.
+</ResponseField>
+
+While the population is still building, the poll reports `running` and carries a
+`progress` object so you can show how far along it is:
+
+```json 200 OK (running) theme={null}
+{
+  "id": "8f2c1a7d-9e2b-4f42-9344-0df65f73e5d1",
+  "status": "running",
+  "progress": { "produced": 4, "total": 10 }
+}
+```
+
+## The population
+
+When `status` is `succeeded`, the poll carries the population under `result`: the
+rendered personas, the inferred blueprint the personas were sampled from, and
+fidelity reports showing how closely the realized population matches that
+blueprint. The fields below describe the shape of that `result`.
+
+Each persona is **dynamic**. There is no fixed persona shape: the blueprint
+declares the field set, and every persona carries exactly those fields as a flat
+`fields` map of name to string value. For the League of Legends prompt the API
+might infer `region`, `rank`, `main_role`, `hours_per_week`, `name`, and
+`backstory`; a different prompt yields a different field set.
+
+<ResponseField name="personas" type="object[]">
+  The generated personas. Each one carries the blueprint's fields plus a
+  ready-to-use `system_prompt` and a formatted `markdown` sheet — all three are
+  always present.
+
+  <Expandable title="persona">
+    <ResponseField name="persona_id" type="string">
+      Stable identifier for this persona, unique within the population.
+    </ResponseField>
+
+    <ResponseField name="fields" type="object">
+      A flat map of field name to string value. The keys are exactly the field
+      names the blueprint declared (see `blueprint.fields`); the values are always
+      strings, including numeric fields (for example `"hours_per_week": "48"`).
+    </ResponseField>
+
+    <ResponseField name="system_prompt" type="string">
+      A prompt that makes a model role-play as this persona.
+    </ResponseField>
+
+    <ResponseField name="markdown" type="string">
+      A formatted character sheet for the persona.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="blueprint" type="object">
+  The inferred field model the population was sampled from — the API's reasoning
+  about what makes this population realistic, returned so you can inspect it and
+  read the field set the personas use.
+
+  <Expandable title="blueprint">
+    <ResponseField name="domain" type="string">
+      The inferred domain label (for example `lol_player`).
+    </ResponseField>
+
+    <ResponseField name="order" type="string[]">
+      The sampled fields in causal order. Each field may depend only on fields that
+      appear earlier, which is how the population captures correlations.
+    </ResponseField>
+
+    <ResponseField name="fields" type="object[]">
+      The inferred fields and their distributions.
+
+      <Expandable title="field">
+        <ResponseField name="name" type="string">
+          The field's name (for example `rank`). This is the key it occupies in
+          each persona's `fields` map.
+        </ResponseField>
+
+        <ResponseField name="kind" type="string">
+          One of `categorical` (discrete values), `numeric`, or `text` (written
+          per persona rather than sampled from a distribution).
+        </ResponseField>
+
+        <ResponseField name="description" type="string">
+          What the field means.
+        </ResponseField>
+
+        <ResponseField name="parents" type="string[]">
+          The fields this field is conditioned on. Empty for a root field.
+        </ResponseField>
+
+        <ResponseField name="categorical" type="object">
+          For a root categorical field: a `weights` map of value to relative
+          weight describing its marginal distribution.
+        </ResponseField>
+
+        <ResponseField name="numeric" type="object">
+          For a root numeric field: a truncated-normal distribution with `min`,
+          `max`, `mean`, `sd`, and an `integer` flag.
+        </ResponseField>
+
+        <ResponseField name="conditionals" type="object[]">
+          For a child field: one rule per parent-value combination. Each rule has
+          a `when` map of parent name to parent value, and the `categorical` or
+          `numeric` distribution that applies in that case. This is how the
+          blueprint encodes correlations between fields.
+        </ResponseField>
+
+        <ResponseField name="ordered_values" type="string[]">
+          For an ordered categorical field (for example ranks low→high), the value
+          order, which is also how the API reads monotonic relationships.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="constraints" type="object[]">
+      The deterministic consistency rules the API inferred for this population —
+      the checks every believable member must satisfy. Each compares one numeric
+      field to a linear expression of other numeric fields and constants.
+
+      <Expandable title="constraint">
+        <ResponseField name="name" type="string">
+          The rule's identifier (for example `age_after_start`).
+        </ResponseField>
+
+        <ResponseField name="lhs" type="string">
+          The numeric field on the left-hand side (for example `age`).
+        </ResponseField>
+
+        <ResponseField name="op" type="string">
+          The comparison operator: one of `>=`, `>`, `<=`, `<`, or `==`.
+        </ResponseField>
+
+        <ResponseField name="rhs" type="string">
+          A linear expression of field names and numeric constants (for example
+          `years_played + 6`). The rule holds when `lhs op rhs` is true.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="rationale" type="string">
+      Why the API modeled the population this way.
+    </ResponseField>
+
+    <ResponseField name="sources" type="string[]">
+      Grounding citations, present when `grounding` was `web` or `research`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="diversity" type="object">
+  How varied the population is. Present for multi-persona populations.
+
+  <Expandable title="diversity">
+    <ResponseField name="max_pairwise_similarity" type="number">
+      The similarity of the two most-alike personas; lower is more diverse.
+    </ResponseField>
+
+    <ResponseField name="mean_pairwise_similarity" type="number">
+      The average similarity across all pairs.
+    </ResponseField>
+
+    <ResponseField name="duplicate_pairs" type="integer">
+      The number of near-duplicate persona pairs detected.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="marginals" type="object[]">
+  Per-field fidelity: for each root categorical field, how closely the realized
+  population matches the blueprint's marginal distribution.
+
+  <Expandable title="manifest">
+    <ResponseField name="attribute" type="string">
+      The field this manifest describes.
+    </ResponseField>
+
+    <ResponseField name="cells" type="object[]">
+      One entry per value, each with the value `key`, the `requested` proportion
+      (from the blueprint), and the `achieved` proportion (in the population).
+    </ResponseField>
+
+    <ResponseField name="total_variation_distance" type="number">
+      Overall mismatch between blueprint and population, between `0.0` (perfect)
+      and `1.0`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+When the population succeeds, this object is the value of `result`
+(`{ "id": ..., "status": "succeeded", "result": <the object below> }`):
+
+```json 200 OK (succeeded) theme={null}
+{
+  "id": "8f2c1a7d-9e2b-4f42-9344-0df65f73e5d1",
+  "status": "succeeded",
+  "result": {
+    "personas": [
+      {
+        "persona_id": "p_01",
+        "fields": {
+          "region": "KR",
+          "rank": "Challenger",
+          "main_role": "mid",
+          "hours_per_week": "48",
+          "name": "Jiwoo 'Hae' Park",
+          "backstory": "Grew up in a Seoul PC bang and never left the rift; hit Challenger at 19 and now scrims before dawn chasing an academy contract."
+        },
+        "system_prompt": "You are Jiwoo 'Hae' Park, a Korean Challenger mid main...",
+        "markdown": "# Jiwoo 'Hae' Park\n\n_Korean Challenger mid main..._"
+      },
+      {
+        "persona_id": "p_02",
+        "fields": {
+          "region": "BR",
+          "rank": "Silver",
+          "main_role": "support",
+          "hours_per_week": "7",
+          "name": "Lucas Ferreira",
+          "backstory": "Plays a few nights a week after his shift; mains enchanters and pings missing more than he should."
+        },
+        "system_prompt": "You are Lucas Ferreira, a casual Silver support...",
+        "markdown": "# Lucas Ferreira\n\n_Casual Silver support..._"
+      }
+    ],
+    "blueprint": {
+      "domain": "lol_player",
+      "order": ["region", "rank", "main_role", "hours_per_week"],
+      "fields": [
+        {
+          "name": "region",
+          "kind": "categorical",
+          "description": "server region the player queues on",
+          "parents": [],
+          "categorical": { "weights": { "NA": 0.2, "EUW": 0.25, "KR": 0.15, "BR": 0.15, "CN": 0.25 } },
+          "conditionals": []
+        },
+        {
+          "name": "rank",
+          "kind": "categorical",
+          "description": "ranked solo/duo tier",
+          "parents": [],
+          "categorical": {
+            "weights": { "Bronze": 0.2, "Silver": 0.3, "Gold": 0.25, "Platinum": 0.15, "Diamond": 0.07, "Challenger": 0.03 }
+          },
+          "ordered_values": ["Bronze", "Silver", "Gold", "Platinum", "Diamond", "Challenger"],
+          "conditionals": []
+        },
+        {
+          "name": "main_role",
+          "kind": "categorical",
+          "description": "preferred position",
+          "parents": [],
+          "categorical": { "weights": { "top": 0.2, "jungle": 0.2, "mid": 0.2, "adc": 0.2, "support": 0.2 } },
+          "conditionals": []
+        },
+        {
+          "name": "hours_per_week",
+          "kind": "numeric",
+          "description": "hours played per week",
+          "parents": ["rank"],
+          "conditionals": [
+            { "when": { "rank": "Bronze" }, "numeric": { "min": 1, "max": 20, "mean": 6, "sd": 4, "integer": true } },
+            { "when": { "rank": "Challenger" }, "numeric": { "min": 30, "max": 80, "mean": 50, "sd": 10, "integer": true } }
+          ]
+        },
+        {
+          "name": "name",
+          "kind": "text",
+          "description": "the player's display name, fitting their region",
+          "parents": ["region"],
+          "conditionals": []
+        },
+        {
+          "name": "backstory",
+          "kind": "text",
+          "description": "a short paragraph on how they play and why",
+          "parents": ["rank", "main_role"],
+          "conditionals": []
+        }
+      ],
+      "constraints": [
+        { "name": "hours_nonneg", "lhs": "hours_per_week", "op": ">=", "rhs": "0" }
+      ],
+      "rationale": "Region, rank, and role are independent roots; play time rises with rank; name and backstory are written per persona.",
+      "sources": ["Public ranked-distribution figures for the current season."]
+    },
+    "diversity": {
+      "max_pairwise_similarity": 0.38,
+      "mean_pairwise_similarity": 0.17,
+      "duplicate_pairs": 0
+    },
+    "marginals": [
+      {
+        "attribute": "rank",
+        "cells": [
+          { "key": "Bronze", "requested": 0.2, "achieved": 0.2 },
+          { "key": "Silver", "requested": 0.3, "achieved": 0.3 },
+          { "key": "Gold", "requested": 0.25, "achieved": 0.2 },
+          { "key": "Platinum", "requested": 0.15, "achieved": 0.2 },
+          { "key": "Diamond", "requested": 0.07, "achieved": 0.1 },
+          { "key": "Challenger", "requested": 0.03, "achieved": 0.0 }
+        ],
+        "total_variation_distance": 0.1
+      }
+    ]
+  }
+}
+```
+
+(`personas` and `marginals` are truncated above; a real population contains
+`count` personas and one manifest per root categorical field.)
+
+## When generation fails
+
+If generation fails after the population starts, the poll still returns `200 OK`
+with `status: "failed"` and an `error` instead of a `result`:
+
+```json 200 OK (failed) theme={null}
+{
+  "id": "8f2c1a7d-9e2b-4f42-9344-0df65f73e5d1",
+  "status": "failed",
+  "error": "provider_error"
+}
+```
+
+Branch on the poll's `status` and `error`, not on the HTTP status of the
+poll — a failed population is reported with `200 OK`. Start a new population to
+retry; do not keep polling a failed one.
+
+## Errors
+
+Errors arrive in two places: a bad request is rejected at the `POST`, and a
+failure during generation surfaces on the poll.
+
+The `POST` returns one of these before any population is started:
+
+| Status | Code                | When                                                                                          |
+| ------ | ------------------- | --------------------------------------------------------------------------------------------- |
+| `400`  | `VALIDATION_ERROR`  | `count` is over the configured batch limit.                                                   |
+| `401`  | `UNAUTHORIZED`      | The bearer token is missing, invalid, or expired.                                             |
+| `402`  | `PAYMENT_REQUIRED`  | Your credit balance can't cover the request. See [Credits and billing](/credits-and-billing). |
+| `422`  | `validation_failed` | A required field is missing or has an invalid type/value.                                     |
+
+A rejected `POST` returns the standard error envelope. For example, an empty
+`prompt`:
+
+```json 422 Unprocessable Entity theme={null}
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "request validation failed",
+    "details": [{ "loc": ["prompt"], "msg": "String should have at least 1 character", "type": "string_too_short" }]
+  }
+}
+```
+
+Once the `POST` returns `200`, a later failure appears on the poll as
+`status: "failed"` with `error: "provider_error"` (a stable, opaque failure
+category). Start a fresh population to retry. See
+[Errors](/api-reference/errors) for request errors.
+
+## Example
+
+Start the population, then poll its repository route until it reaches a terminal status
+and read the personas from `result`.
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  # Start the population — returns 200 with an id.
+  curl https://api.humalike.com/v1/personas/actions/generate \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "prompt": "10 League of Legends players from around the globe",
+      "count": 10,
+      "grounding": "web"
+    }'
+
+  # Poll the population (repeat until status is "succeeded" or "failed").
+  curl https://api.humalike.com/v1/personas/repositories/Population/by-id/8f2c1a7d-9e2b-4f42-9344-0df65f73e5d1 \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN"
+  ```
+
+  ```python Python theme={null}
+  import os
+  import time
+
+  import httpx
+
+  headers = {"Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}"}
+
+  start = httpx.post(
+      "https://api.humalike.com/v1/personas/actions/generate",
+      headers=headers,
+      json={
+          "prompt": "10 League of Legends players from around the globe",
+          "count": 10,
+          "grounding": "web",
+      },
+  )
+  start.raise_for_status()  # 200 OK
+  population_id = start.json()["id"]
+  poll_url = f"https://api.humalike.com/v1/personas/repositories/Population/by-id/{population_id}"
+
+  while True:
+      poll = httpx.get(poll_url, headers=headers)
+      poll.raise_for_status()
+      population = poll.json()
+      if population["status"] in ("succeeded", "failed"):
+          break
+      progress = population.get("progress")
+      if progress:
+          print(f"{progress['produced']}/{progress['total']} personas")
+      time.sleep(3)  # research grounding can run for minutes; poll patiently
+
+  if population["status"] == "failed":
+      err = population["error"]
+      raise RuntimeError(f"{err['code']}: {err['message']}")
+
+  result = population["result"]
+  print(len(result["personas"]), "personas")
+  print("fields:", result["blueprint"]["order"])
+  print("first rank:", result["personas"][0]["fields"]["rank"])
+  print("rank fidelity:", result["marginals"][0]["total_variation_distance"])
+  ```
+
+  ```typescript TypeScript theme={null}
+  const headers = {
+    Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}`,
+    "Content-Type": "application/json",
+  };
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  const start = await fetch("https://api.humalike.com/v1/personas/actions/generate", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      prompt: "10 League of Legends players from around the globe",
+      count: 10,
+      grounding: "web",
+    }),
+  });
+  if (start.status !== 200) throw new Error(`start failed: ${start.status}`);
+  const populationId = (await start.json()).id;
+  const pollUrl = `https://api.humalike.com/v1/personas/repositories/Population/by-id/${populationId}`;
+
+  let population;
+  for (;;) {
+    const poll = await fetch(pollUrl, { headers });
+    if (!poll.ok) throw new Error(`poll failed: ${poll.status}`);
+    population = await poll.json();
+    if (population.status === "succeeded" || population.status === "failed") break;
+    if (population.progress) {
+      console.log(`${population.progress.produced}/${population.progress.total} personas`);
+    }
+    await sleep(3000); // research grounding can run for minutes; poll patiently
+  }
+
+  if (population.status === "failed") {
+    throw new Error(population.error);
+  }
+
+  const result = population.result;
+  console.log(result.personas.length, "personas");
+  console.log("fields:", result.blueprint.order);
+  console.log("first rank:", result.personas[0].fields.rank);
+  console.log("rank fidelity:", result.marginals[0].total_variation_distance);
+  ```
+</CodeGroup>
+
+Because the field set is inferred per prompt, read the keys you need from each
+persona's `fields` map rather than hard-coding them — inspect `blueprint.fields`
+to see which fields a given population carries. The `diversity` and `marginals`
+reports are populated only for multi-persona populations (`count` > 1); a single
+persona omits them.
+
+## Next
+
+* [Validate personas](/api-reference/validate) — score a population against the quality gates.
+* [Enhance a persona](/api-reference/enhance) — deepen a single persona you already wrote.
+* [Errors](/api-reference/errors) — the full error model and how to recover.

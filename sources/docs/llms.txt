@@ -1,0 +1,35 @@
+# Developers
+
+> Reference documentation for the Humalike public API.
+
+## Docs
+
+- [Humalike API](https://docs.humalike.com/index.md): A suite of HTTP APIs for building agents that talk, time, and read people like a human.
+- [Quickstart](https://docs.humalike.com/quickstart.md): Make your first authenticated request to the Humalike API.
+- [Authentication](https://docs.humalike.com/authentication.md): Authenticate every request with a bearer token.
+- [When to call each API](https://docs.humalike.com/calling-patterns.md): How often to call each Humalike component, and two worked integrations: a short 1:1 support chat and an agent in a long-lived thread.
+- [Credits and billing](https://docs.humalike.com/credits-and-billing.md): How Humalike meters billable calls with credits, and what happens when your balance can't cover one.
+- [Errors](https://docs.humalike.com/api-reference/errors.md): Status codes and the error envelope returned by the API.
+- [Hermes Agent plugin](https://docs.humalike.com/integrations/hermes-agent-plugin.md): Use the Humalike API from the Hermes Agent framework.
+- [Turn-taking](https://docs.humalike.com/api-reference/turn-taking/overview.md): Give an agent human-like timing in a live chat: when to speak, and a reply paced out like a real person typing.
+- [Open a thread](https://docs.humalike.com/api-reference/turn-taking/open-thread.md): Start or re-open a chat thread and get a WebSocket URL for the agent's messages.
+- [Submit messages](https://docs.humalike.com/api-reference/turn-taking/submit-messages.md): Feed inbound messages and get a speak / stay-silent decision for the agent.
+- [Respond](https://docs.humalike.com/api-reference/turn-taking/respond.md): Submit the agent's drafted reply; it is paced into chat messages and delivered over the WebSocket.
+- [Record an event](https://docs.humalike.com/api-reference/turn-taking/record-event.md): Report non-message activity — typing and edits — to inform behavioural signals.
+- [Personas](https://docs.humalike.com/api-reference/personas.md): Generate a grounded, lifelike population from a single prompt.
+- [Enhance a persona](https://docs.humalike.com/api-reference/enhance.md): Deepen an existing persona you already wrote into a full persona.
+- [Validate personas](https://docs.humalike.com/api-reference/validate.md): Check personas against schema and consistency gates, with batch fidelity.
+- [Extract profile](https://docs.humalike.com/api-reference/extract.md): Turn a chat transcript into a norms profile and a ready-to-use prompt block.
+- [Analyze transcript](https://docs.humalike.com/api-reference/analyze.md): Turn a transcript into an evidence-cited reception report for one of your agents.
+- [Get report](https://docs.humalike.com/api-reference/reports.md): Read a previously analyzed reception report back by id.
+- [Audit](https://docs.humalike.com/api-reference/audit/overview.md): Hand over a raw transcript and get back a full audit of how your agent behaved.
+- [Prepare a run](https://docs.humalike.com/api-reference/audit/prepare.md): Send a raw transcript and get back a parked run, its speakers, and a guess at your agent.
+- [Launch a run](https://docs.humalike.com/api-reference/audit/launch.md): Name the agent in a prepared run and start the audit.
+- [Get a run](https://docs.humalike.com/api-reference/audit/run.md): Poll a launched run and read the finished audit.
+- [Social Memory](https://docs.humalike.com/api-reference/social-memory/overview.md): Person-centric memory of a group conversation — ingest, recall, and ask.
+- [Ingest](https://docs.humalike.com/api-reference/social-memory/ingest.md): Append messages to a scope's transcript. A plain write.
+- [Recall](https://docs.humalike.com/api-reference/social-memory/recall.md): Get ready-to-inject context about the people in a scope, for an arriving turn.
+- [Ask](https://docs.humalike.com/api-reference/social-memory/ask.md): Answer a natural-language question over a scope's transcript.
+- [Foresee a reply](https://docs.humalike.com/api-reference/foresee.md): Read the room before you send: gauge what the other person is thinking, predict how they'll react to your draft, and get a refined reply.
+- [Who am I](https://docs.humalike.com/api-reference/whoami.md): Verify a token and get the account id it belongs to.
+- [Read your usage](https://docs.humalike.com/api-reference/usage-summary.md): Read your account's billed-call totals, per-component breakdown, and 7-day series.

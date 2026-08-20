@@ -1,0 +1,134 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Recall
+
+> Get ready-to-inject context about the people in a scope, for an arriving turn.
+
+```http theme={null}
+POST https://api.humalike.com/v1/social-memory/actions/recall
+```
+
+Given the **arriving turn** in a conversation, return a short, ready-to-inject
+block of context about the people in the scope — drop it straight into an
+agent's prompt before it replies.
+
+`recall` is meant to run **every turn**, before the agent's reply. The
+arriving message is part of the signal: the same text from different speakers
+pulls different context (what does *Alice* asking about lunch surface, versus
+*Bob*?). Run one `recall` per turn alongside whatever else feeds your prompt.
+
+This is a billable read over the scope's conversation; see
+[What a read sees](/api-reference/social-memory/overview#what-a-read-sees).
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Request body
+
+<ParamField body="scope_id" type="string" required>
+  Which scope to recall from. 1–255 characters. See
+  [Scopes](/api-reference/social-memory/overview#scopes).
+</ParamField>
+
+<ParamField body="message" type="Message" required>
+  The arriving turn — the message the agent is about to respond to.
+
+  <Expandable title="Message">
+    <ParamField body="speaker" type="string" required>
+      Who sent the arriving message: a display name or stable id, 1–255 characters.
+    </ParamField>
+
+    <ParamField body="text" type="string" required>
+      The text of the arriving message.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+```json Request theme={null}
+{
+  "scope_id": "team-chat-1",
+  "message": {"speaker": "carol", "text": "want to grab thai for lunch?"}
+}
+```
+
+## Response
+
+<ResponseField name="context" type="string">
+  Prose context about the people involved, tuned to the arriving turn. Drop it
+  into the agent's prompt before it replies. Empty (`""`) when the scope has
+  no stored messages yet.
+</ResponseField>
+
+```json 200 OK theme={null}
+{
+  "context": "Alice has said she cannot touch peanuts. Bob acknowledged this and avoids thai food on her behalf. Carol is the one asking; she has not previously expressed a preference."
+}
+```
+
+## Errors
+
+| Status | Code               | When                                                                                                      |
+| ------ | ------------------ | --------------------------------------------------------------------------------------------------------- |
+| `400`  | `VALIDATION_ERROR` | The request could not be processed, or `message.text` is too large for a single call — shorten and retry. |
+| `401`  | `UNAUTHORIZED`     | The bearer token is missing, invalid, or expired.                                                         |
+| `402`  | `PAYMENT_REQUIRED` | Your account does not have enough credits to cover this request. You are not charged.                     |
+| `403`  | `forbidden`        | The token is valid but not allowed here.                                                                  |
+| `422`  | `VALIDATION_ERROR` | The body is malformed (missing `scope_id`, missing `message`, etc.).                                      |
+| `502`  | `UPSTREAM_ERROR`   | A dependency the request relies on was unavailable. Retry with backoff.                                   |
+
+See [Errors](/api-reference/errors) for the full envelope shape.
+
+## Example
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  curl https://api.humalike.com/v1/social-memory/actions/recall \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "scope_id": "team-chat-1",
+      "message": {"speaker": "carol", "text": "want to grab thai for lunch?"}
+    }'
+  ```
+
+  ```python Python theme={null}
+  import os
+  import httpx
+
+  resp = httpx.post(
+      "https://api.humalike.com/v1/social-memory/actions/recall",
+      headers={"Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}"},
+      json={
+          "scope_id": "team-chat-1",
+          "message": {"speaker": "carol", "text": "want to grab thai for lunch?"},
+      },
+  )
+  resp.raise_for_status()
+  context = resp.json()["context"]
+  # Inject `context` into the agent's prompt before it replies.
+  print(context)
+  ```
+
+  ```typescript TypeScript theme={null}
+  const res = await fetch("https://api.humalike.com/v1/social-memory/actions/recall", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      scope_id: "team-chat-1",
+      message: { speaker: "carol", text: "want to grab thai for lunch?" },
+    }),
+  });
+
+  const { context } = await res.json();
+  // Inject `context` into the agent's prompt before it replies.
+  console.log(context);
+  ```
+</CodeGroup>

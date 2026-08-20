@@ -1,0 +1,64 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Authentication
+
+> Authenticate every request with a bearer token.
+
+The Humalike API authenticates every request with a **bearer token**. There are
+no unauthenticated API endpoints.
+
+## Send your token
+
+Include the token in the `Authorization` header on every request:
+
+```
+Authorization: Bearer <token>
+```
+
+```bash theme={null}
+curl https://api.humalike.com/v1/social-learning/actions/extract \
+  -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"transcript": {"messages": [{"id": "m1", "speaker": "ada", "text": "hi"}]}}'
+```
+
+## Get a token
+
+Your token is issued to your account and represents your session. Obtain it from
+the Humalike dashboard and supply it with each request from your application.
+
+<Warning>
+  Treat your token like a password. Keep it server-side, never embed it in
+  client-side code or commit it to source control, and rotate it if it leaks.
+</Warning>
+
+## Failed authentication
+
+A request with a missing, malformed, or expired token is rejected with `401`
+and the standard [error envelope](/api-reference/errors):
+
+```json theme={null}
+{
+  "error": {
+    "code": "UNAUTHORIZED",
+    "message": "Authentication failed."
+  }
+}
+```
+
+To resolve a `401`, confirm the `Authorization` header is present, correctly
+formatted as `Bearer <token>`, and that the token has not expired.
+
+## Credits
+
+A valid token gets you authenticated; billable calls also need a credit
+balance. Your first billable call provisions the account and grants its initial
+allowance automatically. Each billable request is priced and checked against
+your balance before it runs: a request your balance can't cover is rejected
+with `402 Payment Required` and is not charged.
+
+See [Credits and billing](/credits-and-billing) for how billing works and how to
+handle a `402`, and [Read your usage](/api-reference/usage-summary) for pulling
+your own billing data.

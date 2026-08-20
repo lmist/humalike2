@@ -1,0 +1,85 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Humalike API
+
+> A suite of HTTP APIs for building agents that talk, time, and read people like a human.
+
+The Humalike API is a set of HTTP APIs for building agents that behave like
+people in conversation — learning how a group talks, deciding when to speak,
+pacing replies, remembering who said what, and reading how a message will land.
+
+Every API shares one base URL, one bearer-token authentication scheme, one error
+envelope, and one credit balance. Learn those once on this page, then go to the
+API you need.
+
+## Base URL
+
+All requests go to:
+
+```
+https://api.humalike.com
+```
+
+Every request must be made over HTTPS. Plain HTTP is not supported.
+
+## The APIs
+
+<CardGroup cols={2}>
+  <Card title="Persona API" icon="users" href="/api-reference/personas">
+    Generate a grounded, lifelike population from a single prompt.
+  </Card>
+
+  <Card title="Social Learning API" icon="wand-magic-sparkles" href="/api-reference/extract">
+    Turn a chat transcript into a profile of how a group talks, plus a ready-to-use prompt block.
+  </Card>
+
+  <Card title="Social Observability API" icon="chart-line" href="/api-reference/analyze">
+    Turn a transcript into an evidence-cited reception report for one of your agents.
+  </Card>
+
+  <Card title="Social Memory API" icon="brain" href="/api-reference/social-memory/overview">
+    Person-centric memory of a group conversation — ingest, recall, and ask.
+  </Card>
+
+  <Card title="Theory of Mind API" icon="lightbulb" href="/api-reference/foresee">
+    Predict how a reply will land and get a refined version before you send it.
+  </Card>
+
+  <Card title="Turn-taking API" icon="comments" href="/api-reference/turn-taking/overview">
+    Decide when an agent should speak and pace its reply like a real person.
+  </Card>
+</CardGroup>
+
+## Start here
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Make your first authenticated request in a couple of minutes.
+  </Card>
+
+  <Card title="Authentication" icon="key" href="/authentication">
+    Send your bearer token on every request.
+  </Card>
+
+  <Card title="Credits and billing" icon="credit-card" href="/credits-and-billing">
+    How billable calls are metered, and the `402` you get when your balance is low.
+  </Card>
+
+  <Card title="Errors" icon="triangle-exclamation" href="/api-reference/errors">
+    The status codes and error envelope shared across every API.
+  </Card>
+</CardGroup>
+
+## Conventions
+
+These hold across every Humalike API:
+
+* Requests and responses are JSON (`Content-Type: application/json`).
+* Authentication uses the `Authorization: Bearer <token>` header on every
+  request. See [Authentication](/authentication).
+* Successful responses use `2xx` status codes; failures use `4xx`/`5xx` with a
+  consistent [error envelope](/api-reference/errors).
+* Billable calls draw down a shared credit balance and return `402` when it
+  can't cover the request. See [Credits and billing](/credits-and-billing).

@@ -1,0 +1,72 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Audit
+
+> Hand over a raw transcript and get back a full audit of how your agent behaved.
+
+The Audit API takes a conversation **in whatever format you already have it** —
+a chat export, a log dump, a copied thread — and returns a complete review of
+how your agent behaved in it: a reception report, the context your agent was
+missing, a per-turn risk read, and rewritten versions of its worst moments.
+
+It differs from [`analyze`](/api-reference/analyze) in two ways. It parses the
+transcript for you, so you do not have to build the message list yourself. And
+it runs the whole review, which takes minutes, so you start it and collect the
+result later rather than holding a request open.
+
+## The flow
+
+Three calls, in this order:
+
+1. [`audit_prepare`](/api-reference/audit/prepare) — send the raw text. You get
+   back a `run_id`, the speakers found in it, and a guess at which one is your
+   agent. Billable.
+2. [`audit_launch`](/api-reference/audit/launch) — tell the API which speaker is
+   your agent. This is what starts the audit. It returns immediately.
+3. [`audit-run`](/api-reference/audit/run) — poll for the result until every
+   section is filled in.
+
+Step 2 exists because the audit reviews **one** speaker, and picking the wrong
+one produces a confident review of the wrong participant. `audit_prepare`
+guesses so you can pre-select it in your interface, but the guess is never
+acted on by itself.
+
+## Nothing runs until you launch
+
+A prepared run is parked. Until `audit_launch` confirms which speaker is your
+agent, the run is never executed and never billed beyond the `audit_prepare`
+call that created it. A run you prepare and abandon costs you that one call and
+nothing more.
+
+## Size limits
+
+Both limits **refuse**. Neither trims your transcript, because a review of a
+slice you did not choose is a claim about a conversation you never sent.
+
+| Limit                             | Value               | Status | Charged?                                           |
+| --------------------------------- | ------------------- | ------ | -------------------------------------------------- |
+| Messages in the parsed transcript | 250                 | `400`  | Yes — reading the text is what counts the messages |
+| Size of the raw text              | About 32,768 tokens | `400`  | No — refused before any work                       |
+| Length of `raw_text`              | 300,000 characters  | `422`  | No                                                 |
+
+Both `400` responses name the number you sent and the number allowed, so you
+can act on them directly. To audit a longer conversation, send the most recent
+250 messages — which 250 matter is a judgement only you can make.
+
+## Billing
+
+`audit_prepare` is billable. Launching a run bills the stages of the audit as
+they execute. Polling is free. A run that fails a size check after the text was
+read is charged for that read only. See
+[Credits and billing](/credits-and-billing).
+
+## Authentication
+
+Every call is authenticated and **owner-scoped**: a `run_id` is only ever
+visible to the account that created it. A run belonging to another account and
+a run that does not exist return the same error, so run ids cannot be used to
+discover anything.
+
+Next: [Prepare a run](/api-reference/audit/prepare).

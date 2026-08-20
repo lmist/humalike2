@@ -1,0 +1,174 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Read your usage
+
+> Read your account's billed-call totals, per-component breakdown, and 7-day series.
+
+```http theme={null}
+POST https://api.humalike.com/v1/credits/projections/usage-summary
+```
+
+Return your account's **billed usage**. The response is a single computed
+view — 30-day totals across every billable product, a per-product rollup of
+where the credits went, and a zero-filled 7-day daily series suitable for a
+chart.
+
+Use this endpoint to surface your own billing or usage data in your own
+dashboards, scripts, or reporting tools, without scraping invoices or the
+Humalike dashboard. Only completed, billed calls are counted — calls that
+failed or were never charged are excluded, so the numbers match what you
+actually paid for.
+
+The endpoint is **owner-scoped**: it only returns the data of the account that
+made the request, derived from the verified token. There is no `user_id`
+parameter and no way to read another account's usage.
+
+## Authorization
+
+Authenticate with your bearer token, the same one used for every other
+endpoint — either a session token from a signed-in dashboard session or an
+`ak_` API key issued from the Humalike dashboard. See
+[Authentication](/authentication).
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`.
+</ParamField>
+
+## Request body
+
+The endpoint takes no parameters — the calling identity defines whose usage is
+returned. Send an empty JSON object:
+
+```json theme={null}
+{}
+```
+
+## Response
+
+A single `UsageSummary` object covering the last 30 days of billed usage.
+
+<ResponseField name="total_calls" type="integer">
+  Total billed calls in the last 30 days across every product.
+</ResponseField>
+
+<ResponseField name="total_credits" type="integer">
+  Total credits charged in the last 30 days. This is what you actually paid for
+  the work done.
+</ResponseField>
+
+<ResponseField name="per_component" type="ComponentUsage[]">
+  One entry per Humalike product your account used in the window (for example,
+  `social-learning`, `personas`, `theoryofmind`, `social-observability`,
+  `social-memory`). Products your account did not use are omitted.
+
+  <Expandable title="ComponentUsage">
+    <ResponseField name="component" type="string">
+      The product the calls were billed to.
+    </ResponseField>
+
+    <ResponseField name="calls" type="integer">
+      Billed calls to this component in the window.
+    </ResponseField>
+
+    <ResponseField name="credits" type="integer">
+      Credits captured by this component in the window.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="daily_series" type="DailyPoint[]">
+  A zero-filled series of the **last 7 UTC days**, oldest first, suitable for
+  rendering a bar chart. Days with no billed calls are present with `requests:
+      0` so the series always has seven entries.
+
+  <Expandable title="DailyPoint">
+    <ResponseField name="date" type="string">
+      A short UTC weekday label for the day (`Mon`–`Sun`).
+    </ResponseField>
+
+    <ResponseField name="requests" type="integer">
+      Billed calls charged on that UTC day.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example response
+
+```json 200 OK theme={null}
+{
+  "total_calls": 142,
+  "total_credits": 38211,
+  "per_component": [
+    { "component": "social-learning",       "calls": 87, "credits": 21044 },
+    { "component": "personas",              "calls": 31, "credits": 12500 },
+    { "component": "theoryofmind",          "calls": 18, "credits":  3210 },
+    { "component": "social-observability",  "calls":  6, "credits":  1457 }
+  ],
+  "daily_series": [
+    { "date": "Wed", "requests":  4 },
+    { "date": "Thu", "requests": 11 },
+    { "date": "Fri", "requests":  7 },
+    { "date": "Sat", "requests":  0 },
+    { "date": "Sun", "requests":  2 },
+    { "date": "Mon", "requests":  9 },
+    { "date": "Tue", "requests": 13 }
+  ]
+}
+```
+
+## Errors
+
+| Status | Code             | When                                                       |
+| ------ | ---------------- | ---------------------------------------------------------- |
+| `401`  | `UNAUTHORIZED`   | The bearer token is missing, invalid, or expired.          |
+| `403`  | `forbidden`      | The credentials are valid but not permitted to read usage. |
+| `502`  | `UPSTREAM_ERROR` | A dependency the request relies on was unavailable. Retry. |
+
+See [Errors](/api-reference/errors) for the full envelope shape.
+
+## Example
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  curl https://api.humalike.com/v1/credits/projections/usage-summary \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{}'
+  ```
+
+  ```python Python theme={null}
+  import os
+  import httpx
+
+  resp = httpx.post(
+      "https://api.humalike.com/v1/credits/projections/usage-summary",
+      headers={"Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}"},
+      json={},
+  )
+  resp.raise_for_status()
+  summary = resp.json()
+
+  print(f"{summary['total_calls']} calls, {summary['total_credits']} credits in the last 30 days")
+  for component in summary["per_component"]:
+      print(f"  {component['component']}: {component['calls']} calls / {component['credits']} credits")
+  ```
+
+  ```typescript TypeScript theme={null}
+  const res = await fetch(
+    "https://api.humalike.com/v1/credits/projections/usage-summary",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    },
+  );
+  if (!res.ok) throw new Error(`usage-summary failed: ${res.status}`);
+  const summary = await res.json();
+  console.log(`${summary.total_calls} calls in the last 30 days`);
+  ```
+</CodeGroup>

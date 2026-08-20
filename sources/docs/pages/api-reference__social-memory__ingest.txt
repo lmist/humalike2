@@ -1,0 +1,156 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Ingest
+
+> Append messages to a scope's transcript. A plain write.
+
+```http theme={null}
+POST https://api.humalike.com/v1/social-memory/actions/ingest
+```
+
+Append one or more messages to a scope. This is a **plain write** — it stores
+the messages and runs no analysis, so it is cheap to call as the conversation
+happens and never consumes credits. Call it whenever a new turn lands in the
+group.
+
+The action is idempotent: a retried `ingest` (caller retry policy, lost
+response) must not append the transcript twice. Opt in by sending an
+[`Idempotency-Key`](#idempotency) header.
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Idempotency
+
+<ParamField header="Idempotency-Key" type="string">
+  A caller-chosen unique key for this write. A second request with the same
+  key replays the recorded response instead of re-running the write, so a
+  network retry never appends the same messages twice.
+</ParamField>
+
+## Request body
+
+<ParamField body="scope_id" type="string" required>
+  Which scope to append to. 1–255 characters. See
+  [Scopes](/api-reference/social-memory/overview#scopes).
+</ParamField>
+
+<ParamField body="transcript" type="Message[]" required>
+  The messages to append, in conversation order. Must contain at least one
+  message.
+
+  <Expandable title="Message">
+    <ParamField body="speaker" type="string" required>
+      Who sent the message: a display name or stable id, 1–255 characters.
+    </ParamField>
+
+    <ParamField body="text" type="string" required>
+      The message text.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+```json Request theme={null}
+{
+  "scope_id": "team-chat-1",
+  "transcript": [
+    {"speaker": "alice", "text": "I cannot touch peanuts"},
+    {"speaker": "bob", "text": "noted, no thai food then"}
+  ]
+}
+```
+
+## Response
+
+<ResponseField name="ingested" type="integer">
+  The number of messages appended to the scope (matches the length of the
+  request `transcript`).
+</ResponseField>
+
+```json 200 OK theme={null}
+{
+  "ingested": 2
+}
+```
+
+## Errors
+
+`ingest` only validates and stores the request — it runs no analysis and is
+not billable, so it does not return `400 VALIDATION_ERROR` for a failed
+analysis, `402 PAYMENT_REQUIRED`, or `502 UPSTREAM_ERROR`.
+
+| Status | Code               | When                                                         |
+| ------ | ------------------ | ------------------------------------------------------------ |
+| `401`  | `UNAUTHORIZED`     | The bearer token is missing, invalid, or expired.            |
+| `403`  | `forbidden`        | The token is valid but not allowed here.                     |
+| `422`  | `VALIDATION_ERROR` | `scope_id` is missing or too long, or `transcript` is empty. |
+
+See [Errors](/api-reference/errors) for the full envelope shape.
+
+## Example
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  curl https://api.humalike.com/v1/social-memory/actions/ingest \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: $(uuidgen)" \
+    -d '{
+      "scope_id": "team-chat-1",
+      "transcript": [
+        {"speaker": "alice", "text": "I cannot touch peanuts"},
+        {"speaker": "bob", "text": "noted, no thai food then"}
+      ]
+    }'
+  ```
+
+  ```python Python theme={null}
+  import os
+  import uuid
+
+  import httpx
+
+  resp = httpx.post(
+      "https://api.humalike.com/v1/social-memory/actions/ingest",
+      headers={
+          "Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}",
+          "Idempotency-Key": str(uuid.uuid4()),
+      },
+      json={
+          "scope_id": "team-chat-1",
+          "transcript": [
+              {"speaker": "alice", "text": "I cannot touch peanuts"},
+              {"speaker": "bob", "text": "noted, no thai food then"},
+          ],
+      },
+  )
+  resp.raise_for_status()
+  print(resp.json()["ingested"])
+  ```
+
+  ```typescript TypeScript theme={null}
+  const res = await fetch("https://api.humalike.com/v1/social-memory/actions/ingest", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": crypto.randomUUID(),
+    },
+    body: JSON.stringify({
+      scope_id: "team-chat-1",
+      transcript: [
+        { speaker: "alice", text: "I cannot touch peanuts" },
+        { speaker: "bob", text: "noted, no thai food then" },
+      ],
+    }),
+  });
+
+  const data = await res.json();
+  console.log(data.ingested);
+  ```
+</CodeGroup>

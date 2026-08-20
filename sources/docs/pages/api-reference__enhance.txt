@@ -1,0 +1,337 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.humalike.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Enhance a persona
+
+> Deepen an existing persona you already wrote into a full persona.
+
+```http theme={null}
+POST https://api.humalike.com/v1/personas/actions/enhance
+```
+
+Take a persona you already have — a sketch, a few lines, or a rough character
+note — and get back a full, rendered persona built from it: a flat `fields` map,
+a ready-to-use `system_prompt`, and a formatted `markdown` sheet. The API
+sharpens the voice, fills in concrete detail, and surfaces the fields implied by
+your text, without you specifying any structure.
+
+This endpoint is **asynchronous**, in the same shape as
+[Personas](/api-reference/personas): the `POST` returns `200 OK` right away with
+an `id`, and you then `GET` the enhancement repository route with that id until
+the persona is ready. To generate a whole population from a prompt instead, see
+[Personas](/api-reference/personas).
+
+The returned persona is **dynamic**: the API infers which fields fit your text
+and returns exactly those as string values, so the keys differ from one input to
+the next.
+
+## Authorization
+
+<ParamField header="Authorization" type="string" required>
+  Your bearer token: `Bearer <token>`. See [Authentication](/authentication).
+</ParamField>
+
+## Request body
+
+<ParamField body="persona" type="string" required>
+  The existing persona text to deepen. Must be a non-empty string.
+</ParamField>
+
+<ParamField body="grounding" type="string" default="off">
+  How hard to ground the result in real-world data before rewriting. One of:
+
+  * `off` — work from your text alone, with no external lookups.
+  * `web` — enrich the persona with a quick live lookup so details reflect
+    current real-world data.
+  * `research` — run deeper research for the strongest real-world grounding.
+</ParamField>
+
+```json Request theme={null}
+{
+  "persona": "Sam is a 30-year-old support main. Friendly. Plays Thresh.",
+  "grounding": "off"
+}
+```
+
+## Start an enhancement
+
+The `POST` returns `200 OK` straight away. It does not wait for the persona; it
+gives you an `id` used with the enhancement repository route.
+
+<ResponseField name="id" type="string">
+  The enhancement's identifier. Use it to poll for the result.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Always `pending` in this response — the enhancement has been accepted and queued.
+</ResponseField>
+
+```json 200 OK theme={null}
+{
+  "id": "b06f6aae-bcf6-4157-b241-7e19c9182a70",
+  "status": "pending"
+}
+```
+
+<Note>
+  Enhancement rewrites your text into a full persona, so it does not return on
+  the `POST`. `research` grounding runs deeper lookups before rewriting and can
+  take longer to finish. That is why this endpoint hands back an `id` to poll
+  rather than holding the connection open. Poll on an interval of a few seconds,
+  and prefer `off` or `web` grounding when you need a fast result.
+</Note>
+
+## Poll for the result
+
+```http theme={null}
+GET https://api.humalike.com/v1/personas/repositories/Enhancement/by-id/{id}
+```
+
+Call `GET` with the returned id until `status` is `succeeded` or `failed`.
+
+<ResponseField name="id" type="string">
+  The enhancement's identifier, the same value you started.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Where the enhancement is in its lifecycle. One of:
+
+  * `pending` — accepted and queued; rewriting has not started yet.
+  * `running` — grounding and rewriting are under way.
+  * `succeeded` — finished; `persona` holds the enhanced persona.
+  * `failed` — finished; `error` contains a stable failure category.
+
+  `pending` and `running` are not terminal — keep polling. `succeeded` and
+  `failed` are terminal — stop polling.
+</ResponseField>
+
+<ResponseField name="source" type="string">
+  The original persona text you sent, echoed back.
+</ResponseField>
+
+<ResponseField name="grounding" type="string">
+  The grounding level the request ran with (`off`, `web`, or `research`).
+</ResponseField>
+
+<ResponseField name="persona" type="object">
+  The enhanced persona, present only when `status` is `succeeded`. Its shape is
+  described under [The persona](#the-persona) below.
+</ResponseField>
+
+<ResponseField name="error" type="string">
+  A stable failure category such as `provider_error`. Present only when `status`
+  is `failed`.
+</ResponseField>
+
+While the persona is still being rewritten, the poll reports `pending` or
+`running` and carries no `persona` yet:
+
+```json 200 OK (running) theme={null}
+{
+  "id": "b06f6aae-bcf6-4157-b241-7e19c9182a70",
+  "status": "running",
+  "source": "Sam is a 30-year-old support main. Friendly. Plays Thresh.",
+  "grounding": "off",
+  "persona": null
+}
+```
+
+## The persona
+
+When `status` is `succeeded`, the poll carries the enhanced persona under
+`persona` — the same shape as one entry in the
+[Personas](/api-reference/personas#the-population) `personas` array.
+
+<ResponseField name="persona_id" type="string">
+  Stable identifier for this persona.
+</ResponseField>
+
+<ResponseField name="fields" type="object">
+  A flat map of field name to string value. The keys are inferred from your input
+  text; values are always strings, including numeric ones (for example
+  `"age": "30"`).
+</ResponseField>
+
+<ResponseField name="system_prompt" type="string">
+  A prompt that makes a model role-play as this persona. Always present.
+</ResponseField>
+
+<ResponseField name="markdown" type="string">
+  A formatted character sheet. Always present.
+</ResponseField>
+
+```json 200 OK (succeeded) theme={null}
+{
+  "id": "b06f6aae-bcf6-4157-b241-7e19c9182a70",
+  "status": "succeeded",
+  "source": "Sam is a 30-year-old support main. Friendly. Plays Thresh.",
+  "grounding": "off",
+  "persona": {
+    "persona_id": "p_01",
+    "fields": {
+      "name": "Sam Okafor",
+      "age": "30",
+      "main_role": "support",
+      "main_champion": "Thresh",
+      "play_style": "warm but sharp, runs the map from the shadows",
+      "backstory": "Fell for support after carrying a friend group through normals for years; has mained Thresh since release and shot-calls for a club team."
+    },
+    "system_prompt": "You are Sam Okafor, a warm-but-sharp Thresh support...",
+    "markdown": "# Sam Okafor\n\n_Warm-but-sharp Thresh support..._"
+  },
+  "error": null
+}
+```
+
+## When enhancement fails
+
+If enhancement fails after the request is accepted, the poll still returns
+`200 OK` with `status: "failed"` and an `error` instead of a `persona`:
+
+```json 200 OK (failed) theme={null}
+{
+  "id": "b06f6aae-bcf6-4157-b241-7e19c9182a70",
+  "status": "failed",
+  "error": "provider_error"
+}
+```
+
+Branch on the poll's `status` and `error`, not on the HTTP status of the
+poll — a failed enhancement is reported with `200 OK`. Start a new enhancement to
+retry; do not keep polling a failed one.
+
+## Errors
+
+Errors arrive in two places: a bad request is rejected at the `POST`, and a
+failure during rewriting surfaces on the poll.
+
+The `POST` returns one of these before any enhancement is started:
+
+| Status | Code                | When                                                                                          |
+| ------ | ------------------- | --------------------------------------------------------------------------------------------- |
+| `401`  | `UNAUTHORIZED`      | The bearer token is missing, invalid, or expired.                                             |
+| `402`  | `PAYMENT_REQUIRED`  | Your credit balance can't cover the request. See [Credits and billing](/credits-and-billing). |
+| `422`  | `validation_failed` | `persona` is missing or empty.                                                                |
+
+A rejected `POST` returns the standard error envelope. For example, an empty
+`persona`:
+
+```json 422 Unprocessable Entity theme={null}
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "request validation failed",
+    "details": [{ "loc": ["persona"], "msg": "String should have at least 1 character", "type": "string_too_short" }]
+  }
+}
+```
+
+Once the `POST` returns `200`, a later failure appears on the poll as
+`status: "failed"` with `error: "provider_error"` (a stable, opaque failure
+category). Start a fresh enhancement to retry. See
+[Errors](/api-reference/errors) for the full envelope shape.
+
+## Example
+
+Start the enhancement, then poll its repository route until it reaches a terminal
+status and read the persona from `persona`.
+
+<CodeGroup>
+  ```bash cURL theme={null}
+  # Start the enhancement — returns 200 with an id.
+  curl https://api.humalike.com/v1/personas/actions/enhance \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "persona": "Sam is a 30-year-old support main. Friendly. Plays Thresh.",
+      "grounding": "off"
+    }'
+
+  # Poll the enhancement (repeat until status is "succeeded" or "failed").
+  curl https://api.humalike.com/v1/personas/repositories/Enhancement/by-id/b06f6aae-bcf6-4157-b241-7e19c9182a70 \
+    -H "Authorization: Bearer $HUMALIKE_TOKEN"
+  ```
+
+  ```python Python theme={null}
+  import os
+  import time
+
+  import httpx
+
+  headers = {"Authorization": f"Bearer {os.environ['HUMALIKE_TOKEN']}"}
+
+  start = httpx.post(
+      "https://api.humalike.com/v1/personas/actions/enhance",
+      headers=headers,
+      json={
+          "persona": "Sam is a 30-year-old support main. Friendly. Plays Thresh.",
+          "grounding": "off",
+      },
+  )
+  start.raise_for_status()  # 200 OK
+  enhancement_id = start.json()["id"]
+  poll_url = f"https://api.humalike.com/v1/personas/repositories/Enhancement/by-id/{enhancement_id}"
+
+  while True:
+      poll = httpx.get(poll_url, headers=headers)
+      poll.raise_for_status()
+      enhancement = poll.json()
+      if enhancement["status"] in ("succeeded", "failed"):
+          break
+      time.sleep(3)  # research grounding can run longer; poll patiently
+
+  if enhancement["status"] == "failed":
+      raise RuntimeError(enhancement["error"])
+
+  persona = enhancement["persona"]
+  print(persona["fields"].get("name"))
+  print(persona["system_prompt"])
+  ```
+
+  ```typescript TypeScript theme={null}
+  const headers = {
+    Authorization: `Bearer ${process.env.HUMALIKE_TOKEN}`,
+    "Content-Type": "application/json",
+  };
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  const start = await fetch("https://api.humalike.com/v1/personas/actions/enhance", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      persona: "Sam is a 30-year-old support main. Friendly. Plays Thresh.",
+      grounding: "off",
+    }),
+  });
+  if (start.status !== 200) throw new Error(`start failed: ${start.status}`);
+  const enhancementId = (await start.json()).id;
+  const pollUrl = `https://api.humalike.com/v1/personas/repositories/Enhancement/by-id/${enhancementId}`;
+
+  let enhancement;
+  for (;;) {
+    const poll = await fetch(pollUrl, { headers });
+    if (!poll.ok) throw new Error(`poll failed: ${poll.status}`);
+    enhancement = await poll.json();
+    if (enhancement.status === "succeeded" || enhancement.status === "failed") break;
+    await sleep(3000); // research grounding can run longer; poll patiently
+  }
+
+  if (enhancement.status === "failed") {
+    throw new Error(enhancement.error);
+  }
+
+  const persona = enhancement.persona;
+  console.log(persona.fields.name);
+  console.log(persona.system_prompt);
+  ```
+</CodeGroup>
+
+Because the field set is inferred from your text, read the keys you need from the
+`persona.fields` map rather than assuming a fixed shape.
+
+## Next
+
+* [Validate personas](/api-reference/validate) — score the enhanced persona against the quality gates.
+* [Personas](/api-reference/personas) — generate a whole population from a prompt instead.
+* [Errors](/api-reference/errors) — the full error model and how to recover.
