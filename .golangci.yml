@@ -1,0 +1,164 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: false
+
+linters:
+  default: 'none'
+  enable:
+    - errcheck
+    - gosec
+    - misspell
+    - unconvert
+    - unparam
+    - sloglint
+
+  settings:
+    errcheck:
+      exclude-functions:
+        - (*database/sql.DB).Close
+        - (*database/sql.Rows).Close
+        - (*database/sql.Tx).Rollback
+        - (*database/sql.Stmt).Close
+        - (*database/sql.Conn).Close
+        - (*os.File).Close
+        - (os).RemoveAll
+        - (os).Remove
+        - (os).Setenv
+        - (os).Unsetenv
+        - (os).Chdir
+        - (os).MkdirAll
+        - (fmt).Sscanf
+        - (fmt).Fprint
+        - (fmt).Fprintf
+        - (fmt).Fprintln
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    misspell:
+      locale: US
+
+  exclusions:
+    rules:
+      # G304: File inclusion via variable in tests is safe (test data)
+      - path: '_test\.go'
+        linters:
+          - gosec
+        text: "G304"
+      # G306: File permissions 0644 in tests are acceptable (test fixtures)
+      - path: '_test\.go'
+        linters:
+          - gosec
+        text: "G306"
+      # G304: Safe file reads from known JSONL and error paths
+      - path: 'cmd/bd/doctor/fix/sync_branch\.go|cmd/bd/doctor/git\.go|cmd/bd/doctor/sync_branch_jsonl\.go|cmd/bd/dolt\.go|cmd/bd/rename_prefix\.go|internal/beads/beads\.go|internal/syncbranch/worktree\.go'
+        linters:
+          - gosec
+        text: "G304"
+      # G302/G306: Directory/file permissions 0700/0750 are acceptable
+      - linters:
+          - gosec
+        text: "G302.*0700|G301.*0750"
+      # G302/G306: JSONL files and error logs need 0644 for debugging/sharing
+      - path: 'cmd/bd/setup\.go|internal/git/worktree\.go'
+        linters:
+          - gosec
+        text: "G306"
+      # G306: Git hooks must be executable (0700)
+      - path: 'cmd/bd/init\.go'
+        linters:
+          - gosec
+        text: "G306.*0700"
+      # G204: Subprocess launched with variable — all subprocess args are from
+      # trusted internal sources (git commands, config values, validated IDs)
+      - linters:
+          - gosec
+        text: 'G204'
+      # G104: Deferred file/db closes - errors are non-critical
+      - path: 'cmd/bd/show\.go|cmd/bd/doctor/dolt\.go'
+        linters:
+          - gosec
+        text: "G104"
+      # G115: Integer overflow conversion uintptr->int in terminal fd wrappers (safe on 64-bit)
+      - linters:
+          - gosec
+        text: "G115"
+      # G117: Exported struct fields matching secret patterns are intentional API fields
+      - path: 'internal/compact/compactor\.go|internal/jira/client\.go|internal/linear/types\.go|internal/storage/versioned\.go'
+        linters:
+          - gosec
+        text: "G117"
+      # G304: Safe file reads from config paths
+      - path: 'internal/config/config\.go'
+        linters:
+          - gosec
+        text: "G304"
+      # G306: Config file permissions 0644 are acceptable
+      - path: 'internal/config/config\.go'
+        linters:
+          - gosec
+        text: "G306"
+      # G703: Path traversal via taint — paths are from config or internal construction
+      - linters:
+          - gosec
+        text: "G703"
+      # G704: SSRF via taint in API clients with user-configured URLs
+      - path: 'cmd/bd/doctor/(claude|version)\.go|internal/gitlab/client\.go|internal/jira/client\.go|internal/linear/client\.go'
+        linters:
+          - gosec
+        text: "G704"
+      # G705: XSS via taint in CLI template rendering (no browser context)
+      - path: 'cmd/bd/compact\.go'
+        linters:
+          - gosec
+        text: "G705"
+      # errcheck: fmt.Fprintf errors are noise in CLI help text generation
+      - path: 'cmd/bd/help_all\.go'
+        linters:
+          - errcheck
+        text: "fmt.Fprintf"
+      # errcheck: Ignore unchecked errors in test files for common cleanup patterns
+      - path: '_test\.go'
+        linters:
+          - errcheck
+        text: "Error return value of .*(Close|Rollback|RemoveAll|Setenv|Unsetenv|Chdir|MkdirAll|Remove|Write|SetReadDeadline|SetDeadline|Start|Stop).* is not checked"
+
+      # unparam: Placeholder functions that may return errors in future implementation
+      - path: 'cmd/bd/jira\.go'
+        linters:
+          - unparam
+        text: 'reimportConflicts|resolveConflictsByTimestamp'
+      # unparam: readOnly param kept for API symmetry with fix/sqlite_open.go
+      - path: 'cmd/bd/doctor/sqlite_open\.go'
+        linters:
+          - unparam
+        text: 'readOnly'
+      # unparam: childrenMap return computed for future parent-child display
+      - path: 'cmd/bd/list\.go'
+        linters:
+          - unparam
+        text: 'buildBlockingMaps.*childrenMap'
+      # unparam: truncateID maxLen kept for readability
+      - path: 'cmd/bd/migrate\.go'
+        linters:
+          - unparam
+        text: 'truncateID.*maxLen'
+      # unparam: getConfig error return kept for API consistency with store.GetConfig
+      - path: 'internal/(linear|gitlab|jira)/tracker\.go'
+        linters:
+          - unparam
+        text: 'getConfig'
+      # unparam: ctx kept for context propagation; callers currently all pass rootCtx
+      - path: 'cmd/bd/linear\.go'
+        linters:
+          - unparam
+        text: 'getLinearConfig'
+      # misspell: "cancelled" is intentional - matching GitHub API response values
+      - path: 'cmd/bd/gate\.go'
+        linters:
+          - misspell
+        text: 'cancelled'
+
+issues:
+  uniq-by-line: true
