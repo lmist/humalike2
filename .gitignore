@@ -31,3 +31,6 @@ __pycache__/
 .venv-local/
 disc.db*
 test-p*.db*
+
+# shadow-proxy golden dataset (chat transcripts) - share deliberately, not by default
+tools/shadow/golden/
