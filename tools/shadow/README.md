@@ -30,6 +30,30 @@ tools/shadow/report.py         # summarize the newest dataset
 Dataset: `tools/shadow/golden/<UTC date>.jsonl` (gitignored — it holds chat
 transcripts; copy out deliberately).
 
+## Structured store (SQLite)
+
+`sink.py` tails the JSONL into `golden/shadow.sqlite` — idempotent per
+(file, line), so it can backfill, be restarted, or follow forever while the
+proxy runs. The JSONL stays the raw source of truth.
+
+```sh
+tools/shadow/sink.py             # backfill everything under golden/, exit
+tools/shadow/sink.py --follow    # backfill, then keep tailing (1 s poll)
+
+sqlite3 -header -column tools/shadow/golden/shadow.sqlite \
+  "select seq, sender, last_message, decision_local, decision_prod from decisions where disagree=1"
+sqlite3 -header -column tools/shadow/golden/shadow.sqlite \
+  "select seq, bubbles_local, bubbles_prod, draft from bubbles"
+sqlite3 -header -column tools/shadow/golden/shadow.sqlite \
+  "select side, type, recv_offset_ms, content from ws_frames where thread_seen like 'd36fb865%' order by side, recv_offset_ms"
+```
+
+Tables: `exchanges` (one row per HTTP request — request, both responses,
+latencies, request-ids, decision/epoch/bubble columns, `diverged` flags, full
+`diff`), `ws_frames` (one row per frame per side, with `recv_offset_ms`,
+`position`, `content`), `ws_events` (open/close/error with codes), `threads`
+(local ↔ production thread ids). Views: `decisions`, `bubbles`, `divergent`.
+
 ## What is recorded
 
 One line per HTTP exchange (`kind: http`): request (method, path, query,
