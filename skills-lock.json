@@ -6,6 +6,30 @@
       "sourceType": "github",
       "skillPath": "plugins/autoresearch/skills/autoresearch/SKILL.md",
       "computedHash": "0e37474300950d0d068734ab8f878cf43d98eaae5e171b4e6bafc32952e142cb"
+    },
+    "dbos-golang": {
+      "source": "dbos-inc/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/dbos-golang/SKILL.md",
+      "computedHash": "df5b0cb56baf61738bc8434af7fac4bbc4313b60019f2fef1c6d1a7dbb61378b"
+    },
+    "dbos-java": {
+      "source": "dbos-inc/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/dbos-java/SKILL.md",
+      "computedHash": "71a1aa48c242c83467d01f28f6fec9053c9fb0abb62e4e4ff8059e20386bf0ac"
+    },
+    "dbos-python": {
+      "source": "dbos-inc/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/dbos-python/SKILL.md",
+      "computedHash": "7cba2bbc7c018fc448871b3d22d252e4d5f73d343e2fb8ad214d66f26461812d"
+    },
+    "dbos-typescript": {
+      "source": "dbos-inc/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/dbos-typescript/SKILL.md",
+      "computedHash": "ae5f6213b330174589ca9b92f97e5936ec1548118fa3057dde7db681747cff5c"
     }
   }
 }
